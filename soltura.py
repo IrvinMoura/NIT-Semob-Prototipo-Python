@@ -35,7 +35,7 @@ if arquivos:
     df.columns = ["Empresa", "Linha", "Atendimento", "Sentido", "Atividade", "Ponto Início", "Veículo", "Início"]
     df["Sentido"] = df["Sentido"].str.strip().str.lower()
     df["Atividade"] = df["Atividade"].str.strip().str.lower()
-    df["Empresa"] = df["Empresa"].str.strip()
+    df["Empresa"] = df["Empresa"].str.strip().str.upper() # Usar upper para padronizar
     df["Linha"] = df["Linha"].astype(str).str.strip()
     df["Atendimento"] = df["Atendimento"].astype(str).str.strip()
     df["Veículo"] = df["Veículo"].astype(str).str.strip()
@@ -45,67 +45,68 @@ if arquivos:
     df["Início"] = pd.to_datetime(df["Início"], format="%d/%m/%Y %H:%M:%S", errors='coerce')
     df.dropna(subset=['Início'], inplace=True)
 
-    # --- MUDANÇA CRÍTICA: Verificação e remoção de duplicatas ---
+    # Verificação e remoção de duplicatas entre arquivos
     registros_antes = len(df)
-    # Define uma viagem única pela combinação de Empresa, Linha, Veículo e o horário exato de Início
     df.drop_duplicates(subset=['Empresa', 'Linha', 'Veículo', 'Início'], keep='first', inplace=True)
     registros_depois = len(df)
     
     st.success(f"✔ Verificação concluída: {registros_antes - registros_depois} registros duplicados foram removidos.")
-    st.markdown("---") # Adiciona uma linha divisória
+    st.markdown("---")
     
     # Criar a coluna com o nome completo da linha
     df.dropna(subset=['Linha', 'Atendimento'], inplace=True)
     df['Linha_Completa'] = df['Linha'] + " - " + df['Atendimento']
 
-    # 🔹 4. APLICAR A FILTRAGEM CORRETA DA SOLTURA
-    
-    # Regra 1: Filtrar pelo horário
+    # 🔹 4. Aplicar a filtragem correta da Soltura
     hora_inicio = datetime.time(3, 40)
     hora_fim = datetime.time(8, 0)
     df_filtrado_tempo = df[(df["Início"].dt.time >= hora_inicio) & (df["Início"].dt.time <= hora_fim)]
-    
-    # Regra 2: Filtrar para pegar somente as viagens ociosas
     df_filtrado_ocioso = df_filtrado_tempo[df_filtrado_tempo["Sentido"] == 'ocioso']
-    
-    # Regra 3: Filtrar para pegar somente as que saem da garagem
     df_soltura = df_filtrado_ocioso[df_filtrado_ocioso["Ponto Início"].str.contains('garagem', na=False)]
 
-    # Filtro de empresa na barra lateral (agora usa o df_soltura)
+    # Filtro de empresa na barra lateral
     st.sidebar.header("Filtros")
+    opcoes_filtro = [empresa.upper() for empresa in df_soltura["Empresa"].unique()]
+    
     empresa_filtro = st.sidebar.multiselect(
         "Selecione a Empresa:",
-        options=df_soltura["Empresa"].unique(),
-        default=df_soltura["Empresa"].unique()
+        options=opcoes_filtro,
+        default=opcoes_filtro
     )
-    # Aplica o filtro de empresa selecionado
     df_filtrado_final = df_soltura[df_soltura["Empresa"].isin(empresa_filtro)]
 
-    # 🔹 6. Contagem por empresa
+    # 🔹 Contagem por empresa
     contagem_empresa = df_filtrado_final.groupby("Empresa")["Veículo"].nunique().reset_index()
     contagem_empresa.rename(columns={"Veículo": "Qtd_Veiculos"}, inplace=True)
 
-    # 🔹 7. Contagem por linha (destino da soltura)
+    # 🔹 Contagem por linha (destino da soltura)
     contagem_linha = df_filtrado_final.groupby("Linha_Completa")["Veículo"].nunique().reset_index()
     contagem_linha.rename(columns={"Veículo": "Qtd_Veiculos"}, inplace=True)
 
-    # 🔹 8. Quantidade total de veículos
-    total_veiculos = df_filtrado_final["Veículo"].nunique()
-    st.subheader("Resumo da Frota no Período da Soltura")
-    st.write(f"🚍 Quantidade total de veículos que realizaram a soltura: {total_veiculos}")
-
-    # 🔹 9. Gráfico de pizza (Empresa)
+    # 🔹 Gráfico de pizza (Empresa)
     st.subheader("Distribuição de Veículos por Empresa")
+
+    total_veiculos_grafico = contagem_empresa['Qtd_Veiculos'].sum()
+    st.metric(label="Total de Veículos Analisados", value=f"🚍 {total_veiculos_grafico}")
+    
+    # --- MUDANÇA: Definição do mapa de cores com os códigos Hex ---
+    mapa_de_cores = {
+        'AUTO ONIBUS SAO JOAO LTDA': '#222a74', # Azul escuro
+        'EMPRESA DE ONIBUS ROSA LTDA': '#46b7ac'  # Verde água
+    }
+
     fig1 = px.pie(
         contagem_empresa,
         names="Empresa",
         values="Qtd_Veiculos",
-        hole=0.3
+        hole=0.3,
+        color="Empresa",
+        color_discrete_map=mapa_de_cores
     )
     fig1.update_traces(textinfo="percent+value")
     st.plotly_chart(fig1)
 
-    # 🔹 10. Gráfico de barras horizontal (Linha)
+    # 🔹 Gráfico de barras horizontal (Linha)
     st.subheader("Quantidade de Veículos por Linha de Destino (após Soltura)")
 
     contagem_linha_filtrada = contagem_linha[contagem_linha["Qtd_Veiculos"] > 0]

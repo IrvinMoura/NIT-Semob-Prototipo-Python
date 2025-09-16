@@ -58,7 +58,7 @@ pip install -r requirements.txt
 Depois de tudo instalado, para iniciar o dashboard, execute o seguinte comando no terminal:
 
 ```bash
-streamlit run app.py
+streamlit run soltura.py
 ```
 
 Seu navegador abrirá automaticamente com a aplicação rodando.
