@@ -13,7 +13,7 @@ st.set_page_config(layout="wide")
 # Início da Interface do Streamlit
 # ===============================
 st.title("Dashboard de Análise de Soltura")
-st.info("ℹ️ Exibindo dados para o período fixo da Soltura: 03:30 às 08:00, apenas viagens ociosas saindo da garagem.")
+st.info("ℹ️ Exibindo dados para o período fixo da Soltura: 03:40 às 08:00, apenas viagens ociosas saindo da garagem.")
 
 # 🔹 1. Upload de múltiplos arquivos pelo usuário
 arquivos = st.file_uploader(
@@ -61,7 +61,7 @@ if arquivos:
     # 🔹 4. APLICAR A FILTRAGEM CORRETA DA SOLTURA
     
     # Regra 1: Filtrar pelo horário
-    hora_inicio = datetime.time(3, 30)
+    hora_inicio = datetime.time(3, 40)
     hora_fim = datetime.time(8, 0)
     df_filtrado_tempo = df[(df["Início"].dt.time >= hora_inicio) & (df["Início"].dt.time <= hora_fim)]
     
