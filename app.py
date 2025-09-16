@@ -4,79 +4,97 @@
 import pandas as pd
 import plotly.express as px
 import streamlit as st
+import datetime
 
-# 🔹 1. Título do app
-st.title("Análise de Veículos")
+# Configuração da página para o modo "largo"
+st.set_page_config(layout="wide")
 
-# 🔹 2. Upload do arquivo Excel pelo usuário
-arquivo = st.file_uploader("Escolha o arquivo Excel", type=["xlsx"])
-if arquivo is not None:
-    # 🔹 3. Ler Excel e selecionar colunas desejadas
-    df = pd.read_excel(arquivo, usecols=[0, 1, 3, 6, 9, 12])
-    df.columns = ["Empresa", "Linha", "Sentido", "Atividade", "Veículo", "Início"]
+# ===============================
+# Início da Interface do Streamlit
+# ===============================
+st.title("Dashboard de Análise de Soltura")
+st.info("ℹ️ Exibindo dados para o período fixo da Soltura: 03:30 às 08:00, apenas viagens ociosas saindo da garagem.")
 
-    # 🔹 3.1 Padronizar colunas de texto
+# 🔹 1. Upload de múltiplos arquivos pelo usuário
+arquivos = st.file_uploader(
+    "Escolha os arquivos Excel (um ou mais)",
+    type=["xlsx"],
+    accept_multiple_files=True
+)
+
+if arquivos:
+    # 🔹 2. Ler e juntar todos os arquivos enviados
+    lista_de_dfs = []
+    for arquivo in arquivos:
+        df_temp = pd.read_excel(arquivo, usecols=[0, 1, 2, 3, 6, 7, 9, 12])
+        lista_de_dfs.append(df_temp)
+
+    df = pd.concat(lista_de_dfs, ignore_index=True)
+
+    # 🔹 3. Renomear e padronizar as colunas
+    df.columns = ["Empresa", "Linha", "Atendimento", "Sentido", "Atividade", "Ponto Início", "Veículo", "Início"]
     df["Sentido"] = df["Sentido"].str.strip().str.lower()
     df["Atividade"] = df["Atividade"].str.strip().str.lower()
     df["Empresa"] = df["Empresa"].str.strip()
     df["Linha"] = df["Linha"].astype(str).str.strip()
+    df["Atendimento"] = df["Atendimento"].astype(str).str.strip()
+    df["Veículo"] = df["Veículo"].astype(str).str.strip()
+    df["Ponto Início"] = df["Ponto Início"].astype(str).str.lower()
 
-    # 🔹 Contagem total de veículos (sem duplicados)
-    veiculos_totais = df["Veículo"].drop_duplicates()
-    st.write(f"Total de veículos diferentes na planilha: {len(veiculos_totais)}")
+    # Converter a coluna 'Início' para datetime ANTES de usar como chave
+    df["Início"] = pd.to_datetime(df["Início"], format="%d/%m/%Y %H:%M:%S", errors='coerce')
+    df.dropna(subset=['Início'], inplace=True)
 
-    # 🔹 Contagem de veículos diferentes por empresa
-    contagem_empresa_total = df.groupby("Empresa")["Veículo"].nunique().reset_index()
-    contagem_empresa_total.rename(columns={"Veículo": "Qtd_Veiculos"}, inplace=True)
-    st.subheader("Veículos diferentes por empresa")
-    st.dataframe(contagem_empresa_total)
+    # --- MUDANÇA CRÍTICA: Verificação e remoção de duplicatas ---
+    registros_antes = len(df)
+    # Define uma viagem única pela combinação de Empresa, Linha, Veículo e o horário exato de Início
+    df.drop_duplicates(subset=['Empresa', 'Linha', 'Veículo', 'Início'], keep='first', inplace=True)
+    registros_depois = len(df)
+    
+    st.success(f"✔ Verificação concluída: {registros_antes - registros_depois} registros duplicados foram removidos.")
+    st.markdown("---") # Adiciona uma linha divisória
+    
+    # Criar a coluna com o nome completo da linha
+    df.dropna(subset=['Linha', 'Atendimento'], inplace=True)
+    df['Linha_Completa'] = df['Linha'] + " - " + df['Atendimento']
 
+    # 🔹 4. APLICAR A FILTRAGEM CORRETA DA SOLTURA
+    
+    # Regra 1: Filtrar pelo horário
+    hora_inicio = datetime.time(3, 30)
+    hora_fim = datetime.time(8, 0)
+    df_filtrado_tempo = df[(df["Início"].dt.time >= hora_inicio) & (df["Início"].dt.time <= hora_fim)]
+    
+    # Regra 2: Filtrar para pegar somente as viagens ociosas
+    df_filtrado_ocioso = df_filtrado_tempo[df_filtrado_tempo["Sentido"] == 'ocioso']
+    
+    # Regra 3: Filtrar para pegar somente as que saem da garagem
+    df_soltura = df_filtrado_ocioso[df_filtrado_ocioso["Ponto Início"].str.contains('garagem', na=False)]
 
-    # 🔹 4. Converter coluna "Início" para datetime
-    df["Início"] = pd.to_datetime(df["Início"], errors="coerce")
+    # Filtro de empresa na barra lateral (agora usa o df_soltura)
+    st.sidebar.header("Filtros")
+    empresa_filtro = st.sidebar.multiselect(
+        "Selecione a Empresa:",
+        options=df_soltura["Empresa"].unique(),
+        default=df_soltura["Empresa"].unique()
+    )
+    # Aplica o filtro de empresa selecionado
+    df_filtrado_final = df_soltura[df_soltura["Empresa"].isin(empresa_filtro)]
 
-    # 🔹 5. Filtrar dados apenas "ociosos" entre 4h e 8h
-    df_filtrado = df[
-        (df["Sentido"].str.upper() == "OCIOSO") &  # padroniza texto
-        (df["Início"].notna()) &  # ignora NaT
-        ((df["Início"].dt.hour > 3) | ((df["Início"].dt.hour == 3) & (df["Início"].dt.minute >= 40))) &
-        ((df["Início"].dt.hour < 8) | ((df["Início"].dt.hour == 8) & (df["Início"].dt.minute == 0)))
-    ]
-
-    # 🔹 5.1 Remover duplicados, mantendo a primeira ocorrência de cada veículo
-    df_filtrado = df_filtrado.sort_values("Início").drop_duplicates(subset=["Veículo"], keep="first")
-
-    # 🔹 6. Totais
-    veiculos_empresa = df_filtrado.groupby("Empresa")["Veículo"].unique()
-    veiculos_linha = df_filtrado.groupby("Linha")["Veículo"].unique()
-    todos_veiculos = df_filtrado["Veículo"].unique()
-
-    st.write(f"Total veículos por empresa: {sum(len(v) for v in veiculos_empresa)}")
-    st.write(f"Total veículos por linha: {sum(len(v) for v in veiculos_linha)}")
-    st.write(f"Total veículos únicos filtrados: {len(todos_veiculos)}")
-
-    # 🔹 Veículos com mais de uma linha
-    veiculos_duplicados = df_filtrado.groupby("Veículo")["Linha"].nunique()
-    veiculos_duplicados = veiculos_duplicados[veiculos_duplicados > 1].index
-    duplicados_detalhes = df_filtrado[df_filtrado["Veículo"].isin(veiculos_duplicados)]
-    duplicados_detalhes = duplicados_detalhes[["Veículo", "Linha", "Início"]].sort_values(["Veículo", "Início"])
-
-    st.subheader("Veículos com mais de uma linha registrada")
-    st.dataframe(duplicados_detalhes)
-
-    # 🔹 7. Contagem por empresa
-    contagem_empresa = df_filtrado.groupby("Empresa")["Veículo"].nunique().reset_index()
+    # 🔹 6. Contagem por empresa
+    contagem_empresa = df_filtrado_final.groupby("Empresa")["Veículo"].nunique().reset_index()
     contagem_empresa.rename(columns={"Veículo": "Qtd_Veiculos"}, inplace=True)
 
-    # 🔹 8. Contagem por linha
-    contagem_linha = df_filtrado.groupby("Linha")["Veículo"].nunique().reset_index()
+    # 🔹 7. Contagem por linha (destino da soltura)
+    contagem_linha = df_filtrado_final.groupby("Linha_Completa")["Veículo"].nunique().reset_index()
     contagem_linha.rename(columns={"Veículo": "Qtd_Veiculos"}, inplace=True)
 
-    # 🔹 9. Quantidade total de veículos
-    total_veiculos = df_filtrado["Veículo"].nunique()
+    # 🔹 8. Quantidade total de veículos
+    total_veiculos = df_filtrado_final["Veículo"].nunique()
+    st.subheader("Resumo da Frota no Período da Soltura")
     st.write(f"🚍 Quantidade total de veículos que realizaram a soltura: {total_veiculos}")
 
-    # 🔹 10. Gráfico de pizza (Empresa)
+    # 🔹 9. Gráfico de pizza (Empresa)
     st.subheader("Distribuição de Veículos por Empresa")
     fig1 = px.pie(
         contagem_empresa,
@@ -87,18 +105,26 @@ if arquivo is not None:
     fig1.update_traces(textinfo="percent+value")
     st.plotly_chart(fig1)
 
-    # 🔹 11. Gráfico de barras (Linha)
-    contagem_linha_filtrada = contagem_linha[contagem_linha["Qtd_Veiculos"] > 0]
-    contagem_linha_filtrada = contagem_linha_filtrada.sort_values("Linha")
+    # 🔹 10. Gráfico de barras horizontal (Linha)
+    st.subheader("Quantidade de Veículos por Linha de Destino (após Soltura)")
 
-    st.subheader("Quantidade de Veículos por Linha")
+    contagem_linha_filtrada = contagem_linha[contagem_linha["Qtd_Veiculos"] > 0]
+    contagem_linha_filtrada = contagem_linha_filtrada.sort_values("Qtd_Veiculos", ascending=True)
+
+    altura_dinamica = len(contagem_linha_filtrada) * 35
+    altura_final = max(800, altura_dinamica)
+
     fig2 = px.bar(
         contagem_linha_filtrada,
-        x="Linha",
-        y="Qtd_Veiculos",
-        labels={"Linha": "Linha", "Qtd_Veiculos": "Qtd de Veículos"},
-        height=600
+        x="Qtd_Veiculos",
+        y="Linha_Completa",
+        orientation="h",
+        title="Veículos Únicos por Linha no Período da Soltura",
+        labels={"Linha_Completa": "Linha", "Qtd_Veiculos": "Quantidade de Veículos"},
+        text="Qtd_Veiculos",
+        height=altura_final
     )
-    fig2.update_traces(text=contagem_linha_filtrada["Qtd_Veiculos"], textposition="inside")
-    fig2.update_layout(bargap=0.2)
-    st.plotly_chart(fig2)
+    fig2.update_traces(textposition="outside")
+    st.plotly_chart(fig2, use_container_width=True)
+else:
+    st.warning("Por favor, faça o upload de um ou mais arquivos para iniciar a análise.")
