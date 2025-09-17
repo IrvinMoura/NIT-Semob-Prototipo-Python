@@ -1,4 +1,6 @@
-# config.toml
+# Aumenta o limite de upload de arquivos para 1000 MB (1 GB)
+[server]
+maxUploadSize = 1000
 
 [theme]
 base="dark"
