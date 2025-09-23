@@ -3,6 +3,7 @@ import streamlit as st
 import km
 import mco
 import soltura
+import ipk
 
 # Configuração da página
 st.set_page_config(layout="wide")
@@ -21,7 +22,7 @@ if st.session_state.pagina == "home":
     st.title("HUB - SEMOB")
     st.markdown("### Escolha o relatório desejado:")
 
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     with col1:
         if st.button("📊 Quilometragem", use_container_width=True):
             st.session_state.pagina = "km"
@@ -31,6 +32,9 @@ if st.session_state.pagina == "home":
     with col3:
         if st.button("🚍 Soltura", use_container_width=True):
             st.session_state.pagina = "soltura"
+    with col4:
+        if st.button("📊 IPK", use_container_width=True):
+            st.session_state.pagina = "ipk"
 
 # =========================
 # Relatórios
@@ -46,3 +50,7 @@ elif st.session_state.pagina == "mco":
 elif st.session_state.pagina == "soltura":
     st.button("⬅️ Voltar", on_click=voltar_home)
     soltura.main()
+
+elif st.session_state.pagina == "ipk":
+    st.button("⬅️ Voltar", on_click=voltar_home)
+    ipk.main()
