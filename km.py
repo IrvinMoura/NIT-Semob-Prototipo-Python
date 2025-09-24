@@ -74,6 +74,23 @@ def main():
                 operadoras = ['Total Geral'] + sorted(operadoras_km['Nome Operadora'].unique())
                 selected_operadora = st.sidebar.selectbox('Selecione a Operadora', operadoras)
 
+                # --- Filtro por Período ---
+                if 'Data Coleta' in df.columns:
+                    df['Data Coleta'] = pd.to_datetime(df['Data Coleta'], errors='coerce', dayfirst=True)
+
+                    min_date = df['Data Coleta'].min()
+                    max_date = df['Data Coleta'].max()
+
+                    start_date, end_date = st.sidebar.date_input(
+                        "Selecione o período",
+                        [min_date, max_date],
+                        min_value=min_date,
+                        max_value=max_date
+                    )
+
+                    if isinstance(start_date, pd.Timestamp) and isinstance(end_date, pd.Timestamp):
+                        df = df[(df['Data Coleta'] >= start_date) & (df['Data Coleta'] <= end_date)]
+                        
                 st.header('Análise de Quilometragem')
                 if not operadoras_km.empty:
                     if selected_operadora != 'Total Geral':
