@@ -90,7 +90,7 @@ def main():
 
                     if isinstance(start_date, pd.Timestamp) and isinstance(end_date, pd.Timestamp):
                         df = df[(df['Data Coleta'] >= start_date) & (df['Data Coleta'] <= end_date)]
-                        
+
                 st.header('Análise de Quilometragem')
                 if not operadoras_km.empty:
                     if selected_operadora != 'Total Geral':

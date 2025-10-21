@@ -3,3 +3,5 @@ streamlit
 plotly
 openpyxl
 unidecode
+selenium==4.23.1
+webdriver-manager==4.0.1
