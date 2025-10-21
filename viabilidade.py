@@ -4,8 +4,8 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 
-# Configuração da página do Streamlit
 def main():
+    # Configuração da página do Streamlit
     st.set_page_config(
         page_title="Análise de Horário de Pico de Passageiros por Linha",
         layout="wide"
@@ -27,8 +27,10 @@ def main():
     def get_agregacao_info(dia_nome):
         """
         Retorna o tipo de agregação (função e nome) com base no Dia da Semana.
-        A agregação primária agora é sempre SOMA (total de passageiros na hora)
+        ATUALIZAÇÃO: AGORA RETORNA SEMPRE SOMA (sum) para todos os dias,
+        conforme solicitação. O cálculo da média diária é feito na função de pico.
         """
+        # A agregação primária agora é sempre SOMA (total de passageiros na hora)
         return 'sum', 'Soma', 'passageiros (total na hora)'
 
     # @st.cache_data removido da leitura para evitar MemoryError em arquivos grandes.
@@ -85,8 +87,7 @@ def main():
     def calcular_pico_agrupado(df_filtrado):
         """
         Calcula o horário de pico com agregação granular por dia da semana.
-        IMPORTANTE: Os valores são mantidos com precisão FLUTUANTE (float) para
-        que a identificação do pico seja precisa. O arredondamento só ocorre no display.
+        ATUALIZADO: Agregação granular é sempre SOMA. Dia Útil é Média da Soma.
         """
         
         # 1. Agregação Granular (Soma para todos os dias)
@@ -95,6 +96,7 @@ def main():
         
         for dia_num, dia_nome in NOMES_DIAS.items():
             
+            # agg_func agora sempre é 'sum'
             agg_func, agg_name, _ = get_agregacao_info(dia_nome)
             
             df_dia = df_filtrado[df_filtrado['Dia Nome'] == dia_nome]
@@ -106,7 +108,7 @@ def main():
             
             df_agregado_granular = pd.concat([df_agregado_granular, df_agreg])
 
-        # REMOVIDO: df_agregado_granular['Valor Agregado'] = df_agregado_granular['Valor Agregado'].round(2)
+        df_agregado_granular['Valor Agregado'] = df_agregado_granular['Valor Agregado'].round(2)
         
         # Pivoteamento para ter Dia Nome como Coluna
         tabela_granular = df_agregado_granular.pivot_table(
@@ -120,11 +122,12 @@ def main():
         # 2. Cálculo da Média de Dia Útil (Média da SOMA de Seg a Sex)
         dias_uteis_cols = [NOMES_DIAS[d] for d in DIAS_UTEIS_NUM if NOMES_DIAS[d] in tabela_granular.columns]
         
+        # NOVO NOME DA COLUNA
         NOME_COLUNA_DIA_UTIL = 'Dia Útil (Média da Soma)'
         
         if dias_uteis_cols:
-            # Calcula a média da Soma total dos dias úteis (mantendo a precisão FLUTUANTE)
-            tabela_granular[NOME_COLUNA_DIA_UTIL] = tabela_granular[dias_uteis_cols].mean(axis=1) # REMOVIDO: .round(2)
+            # Calcula a média da Soma total dos dias úteis
+            tabela_granular[NOME_COLUNA_DIA_UTIL] = tabela_granular[dias_uteis_cols].mean(axis=1).round(2)
         else:
             tabela_granular[NOME_COLUNA_DIA_UTIL] = 0
 
@@ -141,20 +144,20 @@ def main():
             
             if tipo_coluna in tabela_granular.columns and not tabela_granular[tipo_coluna].empty and tabela_granular[tipo_coluna].max() > 0:
                 
-                # idxmax() e max() são aplicados ao valor FLUTUANTE/BRUTO, garantindo o pico real.
                 pico_hora = tabela_granular.loc[tabela_granular[tipo_coluna].idxmax()]['Hora']
                 pico_valor = tabela_granular[tipo_coluna].max()
                 
                 # Ajuste o nome da agregação para o display
                 if NOME_COLUNA_DIA_UTIL in tipo:
                     agg_name, agg_label = 'Média', 'passageiros (média das somas por hora)'
+                    
                 else:
                     # Sábado e Domingo continuam como Soma
                     agg_func, agg_name, agg_label = get_agregacao_info(tipo)
                 
                 picos[tipo] = {
                     'Hora': pico_hora, 
-                    'Valor Pico': pico_valor, # Valor FLUTUANTE
+                    'Valor Pico': pico_valor, # VALOR ORIGINAL (COM .ROUND(2))
                     'Agregacao': agg_name,
                     'Label': agg_label
                 }
@@ -205,9 +208,7 @@ def main():
                 detalhe_linha.rename(
                     columns={'Passageiros': f'{agg_name} de Passageiros'}, inplace=True
                 )
-                
-                # REMOVIDO: detalhe_linha[f'{agg_name} de Passageiros'] = detalhe_linha[f'{agg_name} de Passageiros'].round(2)
-                
+                detalhe_linha[f'{agg_name} de Passageiros'] = detalhe_linha[f'{agg_name} de Passageiros'].round(2)
                 detalhe_linha['Tipo Dia'] = tipo_pico
                 detalhe_linha['Hora do Pico do Grupo'] = hora_pico
                 
@@ -253,25 +254,29 @@ def main():
                     
                     # --- TABELA DE VALORES AGREGADOS POR HORA (GRUPO) ---
                     st.markdown("### 1. Demanda Agregada por Hora (Grupo)")
+                    # TEXTO ATUALIZADO: Todos os dias agora são Soma
                     st.markdown("**(Segunda a Domingo = Soma Total de Passageiros na Hora)**") 
+                    # TEXTO ATUALIZADO: Dia Útil é Média da Soma
                     st.markdown("**(Coluna 'Dia Útil' é a Média da Soma de Seg a Sex)**") 
                     
-                    # ARREDONDAMENTO PARA EXIBIÇÃO: Aplica round(2) APENAS na visualização da tabela
-                    tabela_display = tabela_resultados.copy()
-                    cols_para_round = [c for c in tabela_display.columns if c != 'Hora']
-                    tabela_display[cols_para_round] = tabela_display[cols_para_round].round(2)
+                    # CÓPIA PARA ARREDONDAMENTO P/ CIMA (SOMENTE EXIBIÇÃO)
+                    tabela_resultados_exibicao = tabela_resultados.copy()
+                    cols_para_ceil = [c for c in tabela_resultados_exibicao.columns if c != 'Hora']
+                    tabela_resultados_exibicao[cols_para_ceil] = np.ceil(tabela_resultados_exibicao[cols_para_ceil])
 
-                    st.dataframe(tabela_display, use_container_width=True, hide_index=True)
+                    st.dataframe(tabela_resultados_exibicao, use_container_width=True, hide_index=True)
                     
                     # --- GRÁFICO GERAL ---
-                    # O Gráfico usa os valores da tabela, que agora são flutuantes. Para o gráfico, está OK.
+                    # Os dados dos gráficos NÃO são arredondados para cima para manter a precisão das curvas
                     df_plot = tabela_resultados.melt(
                         id_vars='Hora', 
+                        # Colunas de dias úteis e a média da soma
                         value_vars=[c for c in tabela_resultados.columns if c not in ['Hora', 'Sábado', 'Domingo']], 
                         var_name='Tipo de Dia', 
                         value_name='Passageiros Agregados'
                     )
                     
+                    # Adiciona Sábado e Domingo separadamente para o gráfico, se necessário
                     df_plot_fim_semana = tabela_resultados.melt(
                         id_vars='Hora', 
                         value_vars=['Sábado', 'Domingo'],
@@ -285,8 +290,10 @@ def main():
                         x='Hora', 
                         y='Passageiros Agregados', 
                         color='Tipo de Dia',
+                        # TÍTULO ATUALIZADO
                         title='Demanda de Passageiros (Soma Total na Hora) por Hora', 
                         template='plotly_white',
+                        # LABEL ATUALIZADO
                         labels={'Passageiros Agregados': 'Valor de Passageiros (Soma Total na Hora)'}
                     )
                     st.plotly_chart(fig_geral, use_container_width=True)
@@ -310,37 +317,43 @@ def main():
                     
                     cols_picos = st.columns(3)
                     
-                    NOME_COLUNA_DIA_UTIL = 'Dia Útil (Média da Soma)' 
+                    # Mapeia as chaves de pico para as colunas
+                    NOME_COLUNA_DIA_UTIL = 'Dia Útil (Média da Soma)' # Garantir que o nome é consistente
                     pico_tipos = [NOME_COLUNA_DIA_UTIL, 'Sábado', 'Domingo']
                     
                     for i, tipo in enumerate(pico_tipos):
                         pico_info = picos.get(tipo, {'Hora': 'N/A', 'Valor Pico': 0, 'Agregacao': 'N/A', 'Label': ''})
                         
                         with cols_picos[i]:
+                            # Ajusta o título para o Dia Útil
                             display_title = 'Dia Útil' if tipo == NOME_COLUNA_DIA_UTIL else tipo
+                            
+                            # --- MODIFICAÇÃO PARA ARREDONDAR PARA CIMA NA EXIBIÇÃO ---
+                            valor_pico_ceil = np.ceil(pico_info['Valor Pico'])
                             
                             cols_picos[i].metric(
                                 f"Pico - {display_title} ({pico_info['Agregacao']})",
                                 f"⏰ {pico_info['Hora']}",
-                                # ARREDONDAMENTO PARA EXIBIÇÃO: Aplica round(2) no valor de pico
-                                f"{pico_info['Valor Pico']:.2f} {pico_info['Label']}"
+                                f"{valor_pico_ceil:.0f} {pico_info['Label']}" # Formatado como inteiro (sem casas decimais)
                             )
+                            # -------------------------------------------------------------------
                             
                             if pico_info['Hora'] != 'N/A' and pico_info['Agregacao'] != 'N/A' and not df_detalhe_linhas.empty:
                                 
                                 agg_name = pico_info['Agregacao']
                                 st.markdown(f"**{agg_name} de passageiros por linha em {pico_info['Hora']}**")
                                 
-                                df_pico_detalhe = df_detalhe_linhas[df_detalhe_linhas['Tipo Dia'] == tipo].drop(columns=['Tipo Dia', 'Hora do Pico do Grupo'])
+                                df_pico_detalhe_bruto = df_detalhe_linhas[df_detalhe_linhas['Tipo Dia'] == tipo].drop(columns=['Tipo Dia', 'Hora do Pico do Grupo']).sort_values(by=f'{agg_name} de Passageiros', ascending=False)
                                 
-                                # ARREDONDAMENTO PARA EXIBIÇÃO: Aplica round(2) na tabela de detalhe
-                                df_pico_detalhe[f'{agg_name} de Passageiros'] = df_pico_detalhe[f'{agg_name} de Passageiros'].round(2)
+                                # CÓPIA PARA ARREDONDAMENTO P/ CIMA (SOMENTE EXIBIÇÃO)
+                                df_pico_detalhe = df_pico_detalhe_bruto.copy()
+                                df_pico_detalhe[f'{agg_name} de Passageiros'] = np.ceil(df_pico_detalhe[f'{agg_name} de Passageiros']).astype(int)
                                 
                                 st.dataframe(df_pico_detalhe, hide_index=True, use_container_width=True)
                                 
                                 # Gráfico de Detalhe por Linha (Barras)
+                                # Usamos o DataFrame ARREDONDADO para que o gráfico reflita a tabela
                                 fig_detalhe = px.bar(
-                                    # O gráfico usa os valores arredondados do df_pico_detalhe
                                     df_pico_detalhe,
                                     x='Código Externo Linha',
                                     y=f'{agg_name} de Passageiros',
