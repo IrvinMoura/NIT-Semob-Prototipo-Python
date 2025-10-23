@@ -5,6 +5,7 @@ import mco
 import soltura
 import ipk
 import viabilidade
+import receita
 
 # Configuração da página
 st.set_page_config(layout="wide")
@@ -23,7 +24,7 @@ if st.session_state.pagina == "home":
     st.title("HUB - SEMOB")
     st.markdown("### Escolha o relatório desejado:")
 
-    col1, col2, col3, col4, col5 = st.columns(5)
+    col1, col2, col3, col4, col5, col6 = st.columns(6)
     with col1:
         if st.button("📊 Quilometragem", use_container_width=True):
             st.session_state.pagina = "km"
@@ -39,6 +40,9 @@ if st.session_state.pagina == "home":
     with col5:
         if st.button("📊 Viabilidade", use_container_width=True):
             st.session_state.pagina = "viabilidade"
+    with col6:
+        if st.button("📊 Fechamento", use_container_width=True):
+            st.session_state.pagina = "receita"
 
 # =========================
 # Relatórios
@@ -62,3 +66,7 @@ elif st.session_state.pagina == "ipk":
 elif st.session_state.pagina == "viabilidade":
     st.button("⬅️ Voltar", on_click=voltar_home)
     viabilidade.main()
+
+elif st.session_state.pagina == "receita":
+    st.button("⬅️ Voltar", on_click=voltar_home)
+    receita.main()
