@@ -12,324 +12,323 @@ def main():
 
     # --- Título do Aplicativo ---
     st.title("💰 Cálculo de Receita e Passageiros por Operadora")
-    st.markdown("Faça o upload de uma planilha (CSV ou Excel) para calcular a receita e o fluxo de passageiros das operadoras.")
+    st.markdown("Faça o upload de uma planilha (CSV ou Excel) para calcular a receita e o fluxo de passageiros das operadoras. (Usar arquivo de Relação de Faturamento)")
 
     # --- Constantes ---
-    TARIFA = 5.15 # Tarifa em R$ para o cálculo do Passageiro Equivalente
+    TARIFA = 5.15
 
-    # --- Nomes das colunas conforme a descrição do usuário ---
-    COLUNA_OPERADORA = 'Nome Operadora'    # Coluna G na planilha
-    COLUNA_VALOR = 'Valor Passageiros'    # Coluna AB na planilha
-    COLUNA_PASSAGEIROS = 'Passageiros'      # Coluna AA na planilha
+    # --- Colunas esperadas ---
+    COLUNA_OPERADORA = 'Nome Operadora'
+    COLUNA_VALOR = 'Valor Passageiros'
+    COLUNA_PASSAGEIROS = 'Passageiros'
 
-    # --- Termos de busca para as operadoras (para garantir a identificação) ---
+    # --- Termos de identificação ---
     TERMO_ROSA = "rosa"
     TERMO_SAO_JOAO = "sao joao"
-    TERMO_VIA_FEIRA = "viafeira" 
+    TERMO_VIA_FEIRA = "viafeira"
 
-    # --- Função para carregar os dados (INALTERADA) ---
+    # ----------------------------------------------------------------
+    # --- FUNÇÃO: carregar dados ---
+    # ----------------------------------------------------------------
     @st.cache_data
     def carregar_dados(uploaded_file):
-        """Lê o arquivo CSV ou Excel e retorna um DataFrame do pandas."""
         try:
+            df = None
             if uploaded_file.name.endswith('.csv'):
-                df = pd.read_csv(uploaded_file, sep=None, engine='python', encoding='latin-1') 
+                # Tenta ler com separador automático ou ponto e vírgula (comum no Brasil)
+                try:
+                    df = pd.read_csv(uploaded_file, sep=';', engine='python', encoding='latin-1')
+                    if df.shape[1] < 2:
+                        uploaded_file.seek(0)
+                        df = pd.read_csv(uploaded_file, sep=None, engine='python', encoding='latin-1')
+                except:
+                     uploaded_file.seek(0)
+                     df = pd.read_csv(uploaded_file, sep=None, engine='python', encoding='latin-1')
             elif uploaded_file.name.endswith(('.xlsx', '.xls')):
                 df = pd.read_excel(uploaded_file, engine='openpyxl')
             else:
                 return None, "Tipo de arquivo não suportado."
             
-            return df, None
+            if df is not None:
+                # Remove espaços em branco dos nomes das colunas para evitar erros de busca
+                df.columns = df.columns.str.strip()
+                return df, None
+            return None, "Erro desconhecido ao ler o arquivo."
         except Exception as e:
             return None, f"Erro ao carregar o arquivo: {e}"
 
-    # --- Funções Auxiliares de Limpeza ---
-
+    # ----------------------------------------------------------------
+    # --- FUNÇÕES DE LIMPEZA ---
+    # ----------------------------------------------------------------
     def limpar_e_converter_valor(df, coluna):
-        """Limpiza e converte a coluna de valor (formato brasileiro) para float."""
         try:
-            if df[coluna].dtype != 'object':
-                df[coluna] = df[coluna].astype(str)
-
-            # 1. REMOVER o ponto (.) de milhar (se houver)
+            df[coluna] = df[coluna].astype(str)
             df[coluna] = df[coluna].str.replace('.', '', regex=False)
-            
-            # 2. SUBSTITUIR a vírgula (,) decimal por ponto (.)
             df[coluna] = df[coluna].str.replace(',', '.', regex=False)
-            
-            # 3. Remover R$ e espaços em branco
             df[coluna] = df[coluna].str.replace('R$', '', regex=False).str.strip()
-            
-            # 4. Conversão para numérico
             df[coluna] = pd.to_numeric(df[coluna], errors='coerce')
-            
             df.dropna(subset=[coluna], inplace=True)
             return True
         except Exception as e:
-            st.error(f"Erro na limpeza/conversão da coluna **'{coluna}'**. Erro técnico: {e}")
+            # st.error(f"Erro ao limpar coluna '{coluna}': {e}") # Opcional: comentar para não poluir
             return False
 
-    # --- Função para identificar nomes (INALTERADA, adaptada para ser externa) ---
-
+    # ----------------------------------------------------------------
+    # --- FUNÇÃO: identificar operadoras reais ---
+    # ----------------------------------------------------------------
     def encontrar_nomes_operadoras(receita_total):
-        """Identifica e retorna os nomes exatos das 3 operadoras no DataFrame."""
-        def encontrar_nome_exato(termo_busca):
-            matches = receita_total[receita_total[COLUNA_OPERADORA].str.contains(termo_busca, case=False, na=False)]
-            if not matches.empty:
-                return matches[COLUNA_OPERADORA].iloc[0] 
-            return termo_busca.upper() 
+        def encontrar_nome_exato(termo):
+            m = receita_total[receita_total[COLUNA_OPERADORA].str.contains(termo, case=False, na=False)]
+            if not m.empty:
+                return m[COLUNA_OPERADORA].iloc[0]
+            return termo.upper()
+        return (
+            encontrar_nome_exato(TERMO_VIA_FEIRA),
+            encontrar_nome_exato(TERMO_ROSA),
+            encontrar_nome_exato(TERMO_SAO_JOAO)
+        )
 
-        nome_via_feira = encontrar_nome_exato(TERMO_VIA_FEIRA)
-        nome_rosa = encontrar_nome_exato(TERMO_ROSA)
-        nome_sao_joao = encontrar_nome_exato(TERMO_SAO_JOAO)
-        return nome_via_feira, nome_rosa, nome_sao_joao
-
-
-    # --- Função para calcular a RECEITA ---
+    # ----------------------------------------------------------------
+    # --- FUNÇÃO: cálculo de receita ---
+    # ----------------------------------------------------------------
     def calcular_receita(df_original):
-        """Soma os valores e aplica a regra de divisão da receita da Via Feira."""
         df = df_original.copy()
         
-        # 1. Selecionar e validar colunas
-        colunas_necessarias = [COLUNA_OPERADORA, COLUNA_VALOR]
-        if not all(col in df.columns for col in colunas_necessarias):
-            st.error(f"O arquivo deve conter as colunas **'{COLUNA_OPERADORA}'** e **'{COLUNA_VALOR}'**.")
-            return None, 0.0, 0.0, "NÃO ENCONTRADO"
+        # Verificação flexível de colunas obrigatórias
+        if COLUNA_OPERADORA not in df.columns:
+            st.error(f"Coluna '{COLUNA_OPERADORA}' não encontrada.")
+            return None, 0, 0, ""
+        if COLUNA_VALOR not in df.columns:
+            st.error(f"Coluna '{COLUNA_VALOR}' não encontrada.")
+            return None, 0, 0, ""
 
-        df = df[colunas_necessarias]
-        
-        # 2. Limpeza de dados (CORREÇÃO DE FORMATO)
+        df = df[[COLUNA_OPERADORA, COLUNA_VALOR]]
         if not limpar_e_converter_valor(df, COLUNA_VALOR):
-            return None, 0.0, 0.0, "NÃO ENCONTRADO"
+            return None, 0, 0, ""
 
-        # 3. Agrupar e somar a receita total por operadora
-        receita_total = df.groupby(COLUNA_OPERADORA)[COLUNA_VALOR].sum().reset_index(name='Receita Bruta')
-        
-        # 4. Identificar os nomes exatos das operadoras
-        nome_via_feira, nome_rosa, nome_sao_joao = encontrar_nomes_operadoras(receita_total)
-        
-        # 5. Aplicar a regra de divisão da Via Feira
-        try:
-            receita_via_feira = receita_total[receita_total[COLUNA_OPERADORA] == nome_via_feira]['Receita Bruta'].iloc[0]
-        except IndexError:
-            receita_via_feira = 0.0
-            
-        parcela_por_operadora = receita_via_feira / 2
-        
-        # 6. Ajustar e Consolidar as receitas (Apenas Rosa e São João)
+        receita_total = df.groupby(COLUNA_OPERADORA)[COLUNA_VALOR].sum().reset_index(name="Receita Bruta")
+
+        nome_via, nome_rosa, nome_sj = encontrar_nomes_operadoras(receita_total)
+        via_feira_rec = receita_total.loc[receita_total[COLUNA_OPERADORA] == nome_via, "Receita Bruta"].iloc[0] if nome_via in receita_total[COLUNA_OPERADORA].values else 0
+        quota = via_feira_rec / 2
+
         df_resultado = pd.DataFrame([
-            {COLUNA_OPERADORA: nome_rosa, 'Receita Final': 0.0},
-            {COLUNA_OPERADORA: nome_sao_joao, 'Receita Final': 0.0}
+            {COLUNA_OPERADORA: nome_rosa, "Receita Final": 0},
+            {COLUNA_OPERADORA: nome_sj, "Receita Final": 0}
         ])
-        
-        for index, row in receita_total.iterrows():
-            operadora = row[COLUNA_OPERADORA]
-            receita_bruta = row['Receita Bruta']
-            
-            if operadora == nome_via_feira:
-                continue
-            elif operadora == nome_rosa:
-                df_resultado.loc[df_resultado[COLUNA_OPERADORA] == nome_rosa, 'Receita Final'] += receita_bruta
-            elif operadora == nome_sao_joao:
-                df_resultado.loc[df_resultado[COLUNA_OPERADORA] == nome_sao_joao, 'Receita Final'] += receita_bruta
-                
-        df_resultado.loc[df_resultado[COLUNA_OPERADORA] == nome_rosa, 'Receita Final'] += parcela_por_operadora
-        df_resultado.loc[df_resultado[COLUNA_OPERADORA] == nome_sao_joao, 'Receita Final'] += parcela_por_operadora
 
-        # NOME DA COLUNA AJUSTADO DE "Receita Ajustada (R$)" para "Receita (R$)"
-        df_resultado.rename(columns={'Receita Final': 'Receita (R$)'}, inplace=True)
-        
-        return df_resultado, receita_via_feira, parcela_por_operadora, nome_via_feira
+        for _, row in receita_total.iterrows():
+            op = row[COLUNA_OPERADORA]
+            val = row["Receita Bruta"]
+            if op == nome_via: continue
+            if op == nome_rosa:
+                df_resultado.loc[df_resultado[COLUNA_OPERADORA] == nome_rosa, "Receita Final"] += val
+            if op == nome_sj:
+                df_resultado.loc[df_resultado[COLUNA_OPERADORA] == nome_sj, "Receita Final"] += val
 
+        df_resultado.loc[df_resultado[COLUNA_OPERADORA] == nome_rosa, "Receita Final"] += quota
+        df_resultado.loc[df_resultado[COLUNA_OPERADORA] == nome_sj, "Receita Final"] += quota
+        df_resultado.rename(columns={"Receita Final": "Receita (R$)"}, inplace=True)
 
-    # --- Função para calcular Passageiros e Passageiro Equivalente ---
-    def calcular_passageiros_e_equivalente(df_original, nome_via_feira, nome_rosa, nome_sao_joao):
-        """Calcula o total de passageiros, aplica a divisão da Via Feira e calcula o Passageiro Equivalente."""
-        
+        return df_resultado, via_feira_rec, quota, nome_via
+
+    # ----------------------------------------------------------------
+    # --- CÁLCULO PASSAGEIROS ---
+    # ----------------------------------------------------------------
+    def calcular_passageiros_e_equivalente(df_original, nome_via, nome_rosa, nome_sj):
         df = df_original.copy()
-        
-        # 1. Selecionar e validar colunas
-        colunas_necessarias = [COLUNA_OPERADORA, COLUNA_PASSAGEIROS]
-        if not all(col in df.columns for col in colunas_necessarias):
-            # Aviso mantido aqui, mas a chamada principal tratará o caso de falha.
-            return None, 0.0, 0.0
+        if COLUNA_PASSAGEIROS not in df.columns:
+            return None, 0, 0
 
-        df = df[colunas_necessarias]
-        
-        # 2. Limpeza de dados: Garantir que a coluna de Passageiros seja numérica
-        try:
-            df[COLUNA_PASSAGEIROS] = pd.to_numeric(df[COLUNA_PASSAGEIROS], errors='coerce')
-            df.dropna(subset=[COLUNA_PASSAGEIROS], inplace=True)
-        except Exception as e:
-            st.error(f"Erro ao converter a coluna **'{COLUNA_PASSAGEIROS}'** para número. Verifique se a coluna contém apenas números inteiros. Erro técnico: {e}")
-            return None, 0.0, 0.0
+        df[COLUNA_PASSAGEIROS] = pd.to_numeric(df[COLUNA_PASSAGEIROS], errors="coerce")
+        df.dropna(subset=[COLUNA_PASSAGEIROS], inplace=True)
 
-        # 3. Agrupar e somar o total de passageiros por operadora
-        passageiros_total = df.groupby(COLUNA_OPERADORA)[COLUNA_PASSAGEIROS].sum().reset_index(name='Total Passageiros Bruto')
-        
-        # 4. Aplicar a regra de divisão da Via Feira para Passageiros
-        try:
-            passageiros_via_feira = passageiros_total[passageiros_total[COLUNA_OPERADORA] == nome_via_feira]['Total Passageiros Bruto'].iloc[0]
-        except IndexError:
-            passageiros_via_feira = 0.0
-            
-        parcela_passageiros = passageiros_via_feira / 2
-        
-        # 5. Ajustar e Consolidar os passageiros (Apenas Rosa e São João)
-        df_passageiros = pd.DataFrame([
-            {COLUNA_OPERADORA: nome_rosa, 'Passageiros Final': 0.0},
-            {COLUNA_OPERADORA: nome_sao_joao, 'Passageiros Final': 0.0}
+        passageiros_total = df.groupby(COLUNA_OPERADORA)[COLUNA_PASSAGEIROS].sum().reset_index(name="Pass Bruto")
+
+        via_pass = passageiros_total.loc[passageiros_total[COLUNA_OPERADORA] == nome_via, "Pass Bruto"].iloc[0] if nome_via in passageiros_total[COLUNA_OPERADORA].values else 0
+        quota = via_pass / 2
+
+        df_res = pd.DataFrame([
+            {COLUNA_OPERADORA: nome_rosa, "Total Passageiros": 0},
+            {COLUNA_OPERADORA: nome_sj, "Total Passageiros": 0},
         ])
-        
-        for index, row in passageiros_total.iterrows():
-            operadora = row[COLUNA_OPERADORA]
-            passageiros_bruto = row['Total Passageiros Bruto']
-            
-            if operadora == nome_via_feira:
-                continue
-            elif operadora == nome_rosa:
-                df_passageiros.loc[df_passageiros[COLUNA_OPERADORA] == nome_rosa, 'Passageiros Final'] += passageiros_bruto
-            elif operadora == nome_sao_joao:
-                df_passageiros.loc[df_passageiros[COLUNA_OPERADORA] == nome_sao_joao, 'Passageiros Final'] += passageiros_bruto
-                
-        df_passageiros.loc[df_passageiros[COLUNA_OPERADORA] == nome_rosa, 'Passageiros Final'] += parcela_passageiros
-        df_passageiros.loc[df_passageiros[COLUNA_OPERADORA] == nome_sao_joao, 'Passageiros Final'] += parcela_passageiros
 
-        # NOME DA COLUNA AJUSTADO PARA "Total Passageiros"
-        df_passageiros.rename(columns={'Passageiros Final': 'Total Passageiros'}, inplace=True)
+        for _, row in passageiros_total.iterrows():
+            op = row[COLUNA_OPERADORA]
+            val = row["Pass Bruto"]
+            if op == nome_via: continue
+            if op == nome_rosa:
+                df_res.loc[df_res[COLUNA_OPERADORA] == nome_rosa, "Total Passageiros"] += val
+            if op == nome_sj:
+                df_res.loc[df_res[COLUNA_OPERADORA] == nome_sj, "Total Passageiros"] += val
 
-        return df_passageiros, passageiros_via_feira, parcela_passageiros
+        df_res.loc[df_res[COLUNA_OPERADORA] == nome_rosa, "Total Passageiros"] += quota
+        df_res.loc[df_res[COLUNA_OPERADORA] == nome_sj, "Total Passageiros"] += quota
 
+        return df_res, via_pass, quota
 
-    # --- Componente de Upload ---
-    uploaded_file = st.file_uploader(
-        "Selecione um arquivo CSV ou Excel",
-        type=['csv', 'xlsx'],
-        help="O arquivo deve conter as colunas: 'Nome Operadora', 'Valor Passageiros' e 'Passageiros'."
+    # ----------------------------------------------------------------
+    # --- UPLOAD ---
+    # ----------------------------------------------------------------
+    file = st.file_uploader("Selecione um arquivo CSV ou Excel", type=["csv", "xlsx"])
+
+    if file is None:
+        st.info("Aguardando upload...")
+        return
+
+    df, erro = carregar_dados(file)
+
+    if erro:
+        st.error(erro)
+        return
+
+    st.success("Arquivo carregado com sucesso!")
+
+    # ---------------------------------------------------------
+    # -------- CALCULAR RECEITA PRINCIPAL ---------------------
+    # ---------------------------------------------------------
+    resultado_receita, via_val, via_cota, nome_via = calcular_receita(df)
+
+    if resultado_receita is None:
+        return
+
+    df_ops = df[[COLUNA_OPERADORA]].drop_duplicates()
+    _, nome_rosa, nome_sj = encontrar_nomes_operadoras(df_ops)
+
+    df_pass, via_pass, via_cota_pass = calcular_passageiros_e_equivalente(df, nome_via, nome_rosa, nome_sj)
+
+    # Construir tabela final
+    df_final = resultado_receita.copy()
+
+    if df_pass is not None:
+        df_final = df_final.merge(df_pass, on=COLUNA_OPERADORA, how="left")
+        df_final["Passageiro Equivalente"] = df_final["Receita (R$)"] / TARIFA
+
+        nova_linha = {
+            COLUNA_OPERADORA: "SIT",
+            "Receita (R$)": df_final["Receita (R$)"].sum(),
+            "Total Passageiros": df_final["Total Passageiros"].sum(),
+            "Passageiro Equivalente": df_final["Passageiro Equivalente"].sum()
+        }
+        df_final = pd.concat([df_final, pd.DataFrame([nova_linha])], ignore_index=True)
+
+    # ---------------------------------------------------------
+    # --- TABELA: Receita Final ---
+    # ---------------------------------------------------------
+    st.header("Resultado Consolidado por Operadora")
+
+    st.dataframe(
+        df_final.style.format({
+            "Receita (R$)": "R$ {:,.2f}",
+            "Total Passageiros": "{:,.0f}",
+            "Passageiro Equivalente": "{:,.2f}",
+        }),
+        use_container_width=True
     )
 
-    if uploaded_file is not None:
-        
-        df, erro = carregar_dados(uploaded_file)
+    # ---------------------------------------------------------
+    # --- GRÁFICO ---
+    # ---------------------------------------------------------
+    df_graf = df_final[df_final[COLUNA_OPERADORA] != "SIT"]
 
-        if erro:
-            st.error(erro)
-        elif df is not None:
-            st.success("Arquivo carregado com sucesso!")
-            
-            # --- CÁLCULO DE RECEITA ---
-            resultado_receita, receita_via_feira, parcela_receita, nome_via_feira = calcular_receita(df)
+    st.subheader("Gráfico de Receita por Operadora")
+    fig = px.bar(
+        df_graf,
+        x=COLUNA_OPERADORA,
+        y="Receita (R$)",
+        color=COLUNA_OPERADORA,
+        text="Receita (R$)",
+        title="Receita por Operadora"
+    )
+    fig.update_traces(texttemplate="R$ %{text:,.2f}", textposition="outside")
+    st.plotly_chart(fig, use_container_width=True)
 
-            if resultado_receita is not None and not resultado_receita.empty:
-                
-                # --- CÁLCULO DE PASSAGEIROS ---
-                if COLUNA_OPERADORA in df.columns:
-                    receita_temp = df.groupby(COLUNA_OPERADORA)[COLUNA_OPERADORA].count().reset_index(name='Count')
-                    _, nome_rosa, nome_sao_joao = encontrar_nomes_operadoras(receita_temp)
-                else:
-                    nome_rosa, nome_sao_joao = TERMO_ROSA.upper(), TERMO_SAO_JOAO.upper()
-                    
-                df_passageiros, passageiros_via_feira, parcela_passageiros = calcular_passageiros_e_equivalente(df, nome_via_feira, nome_rosa, nome_sao_joao)
+    # ===================================================================
+    # === SEÇÃO: TABELA DE RECEITA POR TIPO DE PASSAGEM =================
+    # ===================================================================
+    st.header("🧾 Receita por Tipo de Passagem")
 
-                
-                # --- CONSOLIDAÇÃO E EXIBIÇÃO ---
-                
-                # 1. Consolida Receita e Passageiros
-                
-                # DataFrame final que será exibido
-                df_final = resultado_receita.copy()
+    # Filtra colunas que parecem ser tipos de passagem/valor
+    colunas_receita_tipo = [
+        col for col in df.columns
+        if (
+            any(k in col.lower() for k in [
+                "inteira", "vt", "estud", "grat", "social", "integra", "passe", "vale", "passag"
+            ])
+            and "passageiro" not in col.lower()   # evita colunas de quantidade total (geralmente "Passageiros" ou "Valor Passageiros")
+            and col != COLUNA_VALOR               # evita duplicar a coluna principal
+        )
+    ]
 
-                if df_passageiros is not None:
-                    # Merge dos DataFrames (Receita e Passageiros)
-                    df_final = pd.merge(df_final, df_passageiros, on=COLUNA_OPERADORA, how='left')
-                    
-                    # 2. Calcular Passageiro Equivalente
-                    df_final['Passageiro Equivalente'] = df_final['Receita (R$)'] / TARIFA
-                    
-                    # 3. Adicionar linha de SOMA (SIT)
-                    
-                    # Cria a linha de soma
-                    nova_linha_sit = {
-                        COLUNA_OPERADORA: 'SIT',
-                        'Receita (R$)': df_final['Receita (R$)'].sum(),
-                        'Total Passageiros': df_final['Total Passageiros'].sum(),
-                        'Passageiro Equivalente': df_final['Passageiro Equivalente'].sum()
-                    }
-                    
-                    # Adiciona a linha ao DataFrame
-                    # O pd.concat é mais seguro para adicionar linhas do que o .append (que foi depreciado)
-                    df_final = pd.concat([df_final, pd.Series(nova_linha_sit).to_frame().T], ignore_index=True)
-
-
-                    # 4. Reordenar colunas para exibição
-                    df_final = df_final[[
-                        COLUNA_OPERADORA, 
-                        'Receita (R$)', 
-                        'Total Passageiros', 
-                        'Passageiro Equivalente'
-                    ]]
-
-                else:
-                    # Se o cálculo de passageiros falhar, mostra apenas a receita e calcula o equivalente
-                    df_final['Passageiro Equivalente'] = df_final['Receita (R$)'] / TARIFA
-                    
-                    # Adicionar linha de SOMA (SIT) (apenas para Receita e Equivalente)
-                    nova_linha_sit = {
-                        COLUNA_OPERADORA: 'SIT',
-                        'Receita (R$)': df_final['Receita (R$)'].sum(),
-                        'Passageiro Equivalente': df_final['Passageiro Equivalente'].sum()
-                    }
-                    df_final = pd.concat([df_final, pd.Series(nova_linha_sit).to_frame().T], ignore_index=True)
-
-
-                st.header("Resultado Consolidado por Operadora")
-                
-                # 1. Informações sobre a tarifa (mantida para contexto do Equivalente)
-                st.info(f"O cálculo de Passageiro Equivalente é baseado na Tarifa de R$ {TARIFA:,.2f}.")
-
-                # 2. Tabela de Receita Final
-                st.subheader("Receita, Passageiros e Equivalente (Rosa, São João e SIT)")
-                
-                # Formatação dos números na tabela
-                format_dict = {
-                    'Receita (R$)': "R$ {:,.2f}",
-                    'Total Passageiros': "{:,.0f}", 
-                    'Passageiro Equivalente': "{:,.2f}"
-                }
-                
-                # Adiciona um estilo especial para a linha de soma (negrito)
-                def highlight_sit(row):
-                    return ['font-weight: bold'] * len(row) if row[COLUNA_OPERADORA] == 'SIT' else [''] * len(row)
-                    
-                st.dataframe(
-                    df_final.style.format(format_dict).apply(highlight_sit, axis=1),
-                    hide_index=True,
-                    use_container_width=True
-                )
-                
-                # 3. Gráfico de Barras da Receita
-                # O gráfico DEVE EXCLUIR a linha 'SIT'
-                df_grafico = df_final[df_final[COLUNA_OPERADORA] != 'SIT']
-                
-                st.subheader("Visualização da Receita")
-                
-                fig = px.bar(
-                    df_grafico,
-                    x=COLUNA_OPERADORA,
-                    y='Receita (R$)',
-                    title='Receita por Operadora',
-                    labels={COLUNA_OPERADORA: "Operadora", "Receita (R$)": "Receita (R$)"},
-                    color=COLUNA_OPERADORA,
-                    text='Receita (R$)'
-                )
-                fig.update_traces(texttemplate='R$ %{text:,.2f}', textposition='outside')
-                fig.update_yaxes(tickprefix="R$ ")
-                st.plotly_chart(fig, use_container_width=True)
-
-            elif resultado_receita is not None and resultado_receita.empty:
-                st.warning("Nenhum dado encontrado para as operadoras Rosa ou São João.")
-            else:
-                st.warning("Ocorreu um erro inesperado no processamento dos dados. Verifique a estrutura da planilha.")
-        
+    if not colunas_receita_tipo:
+        st.warning("Nenhuma coluna de receita por tipo encontrada.")
     else:
-        st.info("Aguardando o upload de um arquivo...")
+        df_receita_tipos = df[colunas_receita_tipo + [COLUNA_OPERADORA]].copy()
+
+        # Limpeza robusta das colunas selecionadas
+        for col in colunas_receita_tipo:
+            df_receita_tipos[col] = (
+                df_receita_tipos[col].astype(str)
+                .str.replace('.', '', regex=False)
+                .str.replace(',', '.', regex=False)
+                .str.replace('R$', '', regex=False)
+                .str.strip()
+            )
+            df_receita_tipos[col] = pd.to_numeric(df_receita_tipos[col], errors="coerce").fillna(0)
+
+        # -------------------------------------------------------
+        # IDENTIFICAÇÃO DINÂMICA DAS COLUNAS DE VALOR DE INTEGRAÇÃO
+        # -------------------------------------------------------
+        # Procura colunas que tenham "valor" E "integra" no nome (case insensitive)
+        cols_int_existentes = [
+            c for c in df_receita_tipos.columns 
+            if ('integra' in c.lower())
+        ]
+        
+        # Debug (opcional, remova se quiser limpar a tela)
+        # if not cols_int_existentes:
+        #    st.warning("Atenção: Não foram identificadas colunas de Valor de Integração automaticamente.")
+        
+        # Tabela geral (Soma de tudo por coluna)
+        tabela_soma = (
+            df_receita_tipos[colunas_receita_tipo]
+            .sum()
+            .reset_index()
+            .rename(columns={"index": "Tipo de Passagem", 0: "Receita Total (R$)"})
+        )
+
+        # Se encontrou colunas de integração, cria a linha de soma
+        if cols_int_existentes:
+            total_integracao = df_receita_tipos[cols_int_existentes].sum().sum()
+            
+            linha_integracao = pd.DataFrame([{
+                "Tipo de Passagem": "--- SOMA INTEGRAÇÃO (Passagem + Est + VT) ---", 
+                "Receita Total (R$)": total_integracao
+            }])
+            
+            # Adiciona ao final da tabela de totais
+            tabela_soma = pd.concat([tabela_soma, linha_integracao], ignore_index=True)
+
+        st.subheader("Total Geral por Tipo")
+        st.dataframe(
+            tabela_soma.style.format({"Receita Total (R$)": "R$ {:,.2f}"}),
+            use_container_width=True
+        )
+
+        # NOVA FEATURE → Soma por operadora
+        st.subheader("Receita por Tipo Separada por Operadora")
+        
+        # Agrupa por operadora
+        tabela_por_operadora = df_receita_tipos.groupby(COLUNA_OPERADORA)[colunas_receita_tipo].sum()
+        
+        # Adiciona coluna de Soma de Integração se possível
+        if cols_int_existentes:
+            tabela_por_operadora["SOMA INTEGRAÇÃO"] = tabela_por_operadora[cols_int_existentes].sum(axis=1)
+
+        st.dataframe(
+            tabela_por_operadora.style.format("{:,.2f}"),
+            use_container_width=True
+        )
+
+if __name__ == "__main__":
+    main()
