@@ -244,89 +244,134 @@ def main():
     st.plotly_chart(fig, use_container_width=True)
 
     # ===================================================================
-    # === SEÇÃO: TABELA DE RECEITA POR TIPO DE PASSAGEM =================
+    # === SEÇÃO: TABELA POR TIPO (FILTRADA) =============================
     # ===================================================================
-    st.header("🧾 Receita por Tipo de Passagem")
+    st.header("🧾 Detalhamento por Tipo (Quantidade e Integração)")
 
     # Filtra colunas que parecem ser tipos de passagem/valor
+    # Mantemos a lógica ampla primeiro para garantir que pegamos os VALORES para o cálculo da integração
     colunas_receita_tipo = [
         col for col in df.columns
         if (
             any(k in col.lower() for k in [
                 "inteira", "vt", "estud", "grat", "social", "integra", "passe", "vale", "passag"
             ])
-            and "passageiro" not in col.lower()   # evita colunas de quantidade total (geralmente "Passageiros" ou "Valor Passageiros")
+            and "passageiro" not in col.lower()   # evita colunas de quantidade total
             and col != COLUNA_VALOR               # evita duplicar a coluna principal
         )
     ]
 
     if not colunas_receita_tipo:
-        st.warning("Nenhuma coluna de receita por tipo encontrada.")
+        st.warning("Nenhuma coluna de detalhamento encontrada.")
     else:
         df_receita_tipos = df[colunas_receita_tipo + [COLUNA_OPERADORA]].copy()
 
         # Limpeza robusta das colunas selecionadas
         for col in colunas_receita_tipo:
-            df_receita_tipos[col] = (
-                df_receita_tipos[col].astype(str)
-                .str.replace('.', '', regex=False)
-                .str.replace(',', '.', regex=False)
-                .str.replace('R$', '', regex=False)
-                .str.strip()
-            )
-            df_receita_tipos[col] = pd.to_numeric(df_receita_tipos[col], errors="coerce").fillna(0)
+            if "gratuidade" in col.lower():
+                 df_receita_tipos[col] = pd.to_numeric(df_receita_tipos[col], errors="coerce").fillna(0)
+            else:
+                df_receita_tipos[col] = (
+                    df_receita_tipos[col].astype(str)
+                    .str.replace('.', '', regex=False)
+                    .str.replace(',', '.', regex=False)
+                    .str.replace('R$', '', regex=False)
+                    .str.strip()
+                )
+                df_receita_tipos[col] = pd.to_numeric(df_receita_tipos[col], errors="coerce").fillna(0)
 
         # -------------------------------------------------------
-        # IDENTIFICAÇÃO DINÂMICA DAS COLUNAS DE VALOR DE INTEGRAÇÃO
+        # 1. Identificação e Cálculo da Integração (QUANTIDADE)
         # -------------------------------------------------------
-        # Procura colunas que tenham "valor" E "integra" no nome (case insensitive)
-        cols_int_existentes = [
+        # Ajuste: Busca colunas de Integração que NÃO sejam de valor monetário (pois estão zeradas),
+        # somando assim as quantidades (VT Integração + Passagens Integração + Estudantes Integração).
+        cols_int_qtd = [
             c for c in df_receita_tipos.columns 
-            if ('integra' in c.lower())
+            if ('integra' in c.lower() and 'valor' not in c.lower() and 'r$' not in c.lower())
         ]
-        
-        # Debug (opcional, remova se quiser limpar a tela)
-        # if not cols_int_existentes:
-        #    st.warning("Atenção: Não foram identificadas colunas de Valor de Integração automaticamente.")
-        
-        # Tabela geral (Soma de tudo por coluna)
-        tabela_soma = (
-            df_receita_tipos[colunas_receita_tipo]
-            .sum()
-            .reset_index()
-            .rename(columns={"index": "Tipo de Passagem", 0: "Receita Total (R$)"})
-        )
 
-        # Se encontrou colunas de integração, cria a linha de soma
-        if cols_int_existentes:
-            total_integracao = df_receita_tipos[cols_int_existentes].sum().sum()
-            
-            linha_integracao = pd.DataFrame([{
-                "Tipo de Passagem": "--- SOMA INTEGRAÇÃO (Passagem + Est + VT) ---", 
-                "Receita Total (R$)": total_integracao
-            }])
-            
-            # Adiciona ao final da tabela de totais
-            tabela_soma = pd.concat([tabela_soma, linha_integracao], ignore_index=True)
+        # -------------------------------------------------------
+        # 2. Definição das Colunas de Exibição (QUANTIDADES)
+        # -------------------------------------------------------
+        # Lista exata das colunas de QUANTIDADE que você quer exibir (Indices 0, 2, 6, 14, 10)
+        # Atenção: O código busca pelo nome exato ou parte dele que não seja valor.
+        
+        colunas_display_map = {}
+        
+        # Função para achar a coluna correta no DataFrame
+        def achar_coluna(termos_ok, termos_proibidos=None):
+            if termos_proibidos is None: termos_proibidos = []
+            matches = [
+                c for c in df_receita_tipos.columns
+                if all(t in c.lower() for t in termos_ok)
+                and not any(p in c.lower() for p in termos_proibidos)
+                and c != COLUNA_OPERADORA
+            ]
+            return matches[0] if matches else None
 
-        st.subheader("Total Geral por Tipo")
+        # Mapeamento Solicitado:
+        # Vale Transporte = VT (Quantidade)
+        c_vt = achar_coluna(['vt'], termos_proibidos=['valor', 'integra'])
+        if c_vt: colunas_display_map[c_vt] = 'VT'
+
+        # Gratuidade = Gratuidade
+        c_grat = achar_coluna(['gratuidade'])
+        if c_grat: colunas_display_map[c_grat] = 'Gratuidade'
+
+        # Estudante = Estudantes
+        c_est = achar_coluna(['estudante'], termos_proibidos=['valor', 'integra', 'gratuito'])
+        if c_est: colunas_display_map[c_est] = 'Estudantes'
+
+        # Dinheiro = Inteiras
+        c_int = achar_coluna(['inteira'], termos_proibidos=['valor', 'integra'])
+        if c_int: colunas_display_map[c_int] = 'Inteiras'
+
+        # Social = Passagens
+        c_soc = achar_coluna(['passagen'], termos_proibidos=['valor', 'integra', 'passageiro'])
+        if c_soc: colunas_display_map[c_soc] = 'Passagens'
+
+        # Colunas finais para a tabela (sem a integração ainda)
+        cols_finais_lista = list(colunas_display_map.keys())
+
+        # -------------------------------------------------------
+        # 3. Montagem da Tabela Por Operadora
+        # -------------------------------------------------------
+        tabela_por_operadora = df_receita_tipos.groupby(COLUNA_OPERADORA)[cols_finais_lista].sum()
+        
+        # Adiciona a Soma Integração (Soma das Quantidades identificadas)
+        if cols_int_qtd:
+            # Calcula o valor total da integração para cada operadora
+            vals_integra = df_receita_tipos.groupby(COLUNA_OPERADORA)[cols_int_qtd].sum().sum(axis=1)
+            tabela_por_operadora["Soma Integração"] = vals_integra
+        else:
+            tabela_por_operadora["Soma Integração"] = 0.0
+
+        # Renomeia as colunas para o display desejado
+        tabela_por_operadora = tabela_por_operadora.rename(columns=colunas_display_map)
+
+        # Reordena para ficar bonito (se as colunas existirem)
+        ordem_desejada = ['VT', 'Gratuidade', 'Estudantes', 'Inteiras', 'Passagens', 'Soma Integração']
+        cols_presentes = [c for c in ordem_desejada if c in tabela_por_operadora.columns]
+        tabela_por_operadora = tabela_por_operadora[cols_presentes]
+
+        st.subheader("Receita por Tipo Separada por Operadora")
         st.dataframe(
-            tabela_soma.style.format({"Receita Total (R$)": "R$ {:,.2f}"}),
+            tabela_por_operadora.style.format("{:,.2f}"),
             use_container_width=True
         )
 
-        # NOVA FEATURE → Soma por operadora
-        st.subheader("Receita por Tipo Separada por Operadora")
+        # -------------------------------------------------------
+        # 4. Total Geral por Tipo (Lista Vertical)
+        # -------------------------------------------------------
+        st.subheader("Total Geral por Tipo (Resumo)")
         
-        # Agrupa por operadora
-        tabela_por_operadora = df_receita_tipos.groupby(COLUNA_OPERADORA)[colunas_receita_tipo].sum()
+        # Transpõe a tabela por operadora para ter o formato de lista
+        # Soma as colunas (que agora já são as filtradas)
+        resumo = tabela_por_operadora.sum().reset_index()
+        resumo.columns = ["Tipo de Passagem", "Total"]
         
-        # Adiciona coluna de Soma de Integração se possível
-        if cols_int_existentes:
-            tabela_por_operadora["SOMA INTEGRAÇÃO"] = tabela_por_operadora[cols_int_existentes].sum(axis=1)
-
         st.dataframe(
-            tabela_por_operadora.style.format("{:,.2f}"),
+            resumo.style.format({"Total": "{:,.2f}"}),
             use_container_width=True
         )
 
