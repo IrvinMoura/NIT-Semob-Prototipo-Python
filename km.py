@@ -45,17 +45,17 @@ def formatar_br(val):
 def _styler_to_html(df, float_format="{:,.2f}"):
     """Retorna HTML da tabela formatada com pandas Styler (evita repetição)."""
     
-    # MODIFICAÇÃO: Usamos .style.format() e passamos formatar_br como função de formatação
-    # A função formatar_br será aplicada apenas às colunas numéricas automaticamente
+    # Usamos .style.format()
     styler = df.style.format(formatar_br).set_table_attributes('border="1" class="dataframe table-striped table-hover"')
         
     # Se a última linha for 'Total Geral (Km)', aplica um estilo para destacá-la no HTML
     if 'Total Geral (Km)' in df.index:
         
-        # Adiciona classe CSS para a linha de total
+        # O destaque deve ter uma cor fixa para ser visível em ambos os temas
         def highlight_total_row(row):
             if row.name == 'Total Geral (Km)':
-                return ['font-weight: bold; background-color: #e0f7fa;'] * len(row)
+                # Cor de destaque levemente azulada
+                return ['font-weight: bold; background-color: #e0f7fa; color: #333;'] * len(row) 
             return [''] * len(row)
         
         styler.apply(highlight_total_row, axis=1)
@@ -80,8 +80,9 @@ def create_full_html_report_single_table(table_df, title_table, fig=None, select
     # gráfico (colocar no final se fornecido)
     grafico_html = ""
     if fig is not None:
-        # incluir plotly js no primeiro uso
-        grafico_html = "<h2>Gráfico Resumo (Total Geral)</h2>" + fig.to_html(full_html=False, include_plotlyjs='cdn')
+        # A template 'plotly_white' é um bom default para PDF, mas podemos deixá-lo neutro
+        # ou forçar um tema claro, já que o usuário provavelmente imprimirá em fundo branco.
+        grafico_html = "<h2>Gráfico Resumo (Total Geral)</h2>" + fig.to_html(full_html=False, include_plotlyjs='cdn', default_height='500px', default_width='700px')
 
     html_content = f"""
     <!DOCTYPE html>
@@ -90,16 +91,17 @@ def create_full_html_report_single_table(table_df, title_table, fig=None, select
         <title>Relatório - {selected_operadora}</title>
         <meta charset="utf-8">
         <style>
-            body {{ font-family: Arial, sans-serif; margin: 18px; color: #333; }}
+            /* Estilos neutros para se adaptarem ao tema claro/escuro do navegador/leitor de PDF */
+            body {{ font-family: Arial, sans-serif; margin: 18px; }}
             h1 {{ color: #007bff; }}
             h2 {{ border-bottom: 1px solid #ccc; padding-bottom: 4px; margin-top: 22px; }}
             p {{ margin: 8px 0 14px 0; }}
             .dataframe {{ width: 100%; border-collapse: collapse; margin-top: 10px; table-layout: fixed; }}
             .dataframe th, .dataframe td {{ padding: 8px; text-align: right; border: 1px solid #ddd; word-wrap: break-word; }}
-            .dataframe th {{ background-color: #f2f2f2; text-align: left; }}
+            .dataframe th {{ background-color: #f2f2f2; text-align: left; }} /* Fundo cinza claro para cabeçalho */
             .js-plotly-plot {{ width: 70% !important; margin: 0 auto; height: auto; }}
             .table-block {{ page-break-inside: avoid; margin-bottom: 18px; }}
-            .total-row {{ font-weight: bold; background-color: #e0f7fa; }} /* Estilo para a linha de total no HTML puro */
+            /* A linha total é estilizada dentro de _styler_to_html e deve ser visível */
         </style>
     </head>
     <body>
@@ -118,9 +120,6 @@ def create_full_html_report_single_table(table_df, title_table, fig=None, select
 def create_full_html_report_tables_then_chart(tables_ordered_dict, fig=None, report_title="Relatório Consolidado"):
     """
     Cria relatório HTML contendo várias tabelas (em ordem) e, ao final, o gráfico (se for fornecido).
-    tables_ordered_dict: Ordered dict-like {section_title: dataframe_or_None}
-    fig: plotly figure opcional (será incluído no final)
-    A ordem das chaves é respeitada.
     """
     # montar blocos de tabela
     body_parts = []
@@ -135,7 +134,8 @@ def create_full_html_report_tables_then_chart(tables_ordered_dict, fig=None, rep
 
     grafico_html = ""
     if fig is not None:
-        grafico_html = "<h2>Gráfico Resumo (Total Geral)</h2>" + fig.to_html(full_html=False, include_plotlyjs='cdn')
+        # A template 'plotly_white' é um bom default para PDF, mas podemos deixá-lo neutro
+        grafico_html = "<h2>Gráfico Resumo (Total Geral)</h2>" + fig.to_html(full_html=False, include_plotlyjs='cdn', default_height='500px', default_width='700px')
 
     html_content = f"""
     <!DOCTYPE html>
@@ -144,16 +144,17 @@ def create_full_html_report_tables_then_chart(tables_ordered_dict, fig=None, rep
         <title>{report_title}</title>
         <meta charset="utf-8">
         <style>
-            body {{ font-family: Arial, sans-serif; margin: 18px; color: #333; }}
+            /* Estilos neutros para se adaptarem ao tema claro/escuro do navegador/leitor de PDF */
+            body {{ font-family: Arial, sans-serif; margin: 18px; }}
             h1 {{ color: #007bff; }}
             h2 {{ border-bottom: 1px solid #ccc; padding-bottom: 4px; margin-top: 22px; }}
             p {{ margin: 8px 0 14px 0; }}
             .dataframe {{ width: 100%; border-collapse: collapse; margin-top: 10px; table-layout: fixed; }}
             .dataframe th, .dataframe td {{ padding: 8px; text-align: right; border: 1px solid #ddd; word-wrap: break-word; }}
-            .dataframe th {{ background-color: #f2f2f2; text-align: left; }}
+            .dataframe th {{ background-color: #f2f2f2; text-align: left; }} /* Fundo cinza claro para cabeçalho */
             .js-plotly-plot {{ width: 70% !important; margin: 0 auto; height: auto; }}
             .table-block {{ page-break-inside: avoid; margin-bottom: 18px; }}
-            .total-row {{ font-weight: bold; background-color: #e0f7fa; }} /* Estilo para a linha de total no HTML puro */
+            /* A linha total é estilizada dentro de _styler_to_html e deve ser visível */
         </style>
     </head>
     <body>
@@ -291,6 +292,12 @@ def main():
             # -------- Exibição: TABELAS PRIMEIRO --------
             st.header(f"Detalhamento de Quilometragem por Tipo de Veículo - {selected_operadora}")
 
+            # Define o subset de colunas para formatação
+            format_subset = ['Km Percorrido', 'Km Falha', 'Km Ociosa']
+            
+            # Função lambda para estilizar a linha total no Streamlit
+            highlight_total_row_st = lambda row: ['font-weight: bold; background-color: #e0f7fa; color: #333;'] * len(row) if row.name == 'Total Geral (Km)' else [''] * len(row)
+
             if selected_operadora == "Total Geral":
                 # São João
                 mask_sj = df_to_filter['Nome Operadora'].astype(str).str.contains('sao joao|são joão|saojoao', case=False, na=False)
@@ -302,10 +309,9 @@ def main():
                     tabela_sj = tipo_km_sj.sort_values(by='Km Percorrido', ascending=False).set_index('Desc. Tipo Veículo')
                     
                     st.subheader("Operadora — São João")
-                    # CORREÇÃO: Usar .style.format(formatar_br, subset=...)
                     tabela_sj_com_total = adicionar_linha_total(tabela_sj)
-                    st.dataframe(tabela_sj_com_total.style.format(formatar_br, subset=['Km Percorrido', 'Km Falha', 'Km Ociosa']).apply(
-                        lambda row: ['font-weight: bold; background-color: #e0f7fa;'] * len(row) if row.name == 'Total Geral (Km)' else [''] * len(row), axis=1), 
+                    st.dataframe(tabela_sj_com_total.style.format(formatar_br, subset=format_subset).apply(
+                        highlight_total_row_st, axis=1), 
                         use_container_width=True)
                 else:
                     st.subheader("Operadora — São João")
@@ -321,10 +327,9 @@ def main():
                     tabela_rosa = tipo_km_rosa.sort_values(by='Km Percorrido', ascending=False).set_index('Desc. Tipo Veículo')
                     
                     st.subheader("Operadora — Rosa")
-                    # CORREÇÃO: Usar .style.format(formatar_br, subset=...)
                     tabela_rosa_com_total = adicionar_linha_total(tabela_rosa)
-                    st.dataframe(tabela_rosa_com_total.style.format(formatar_br, subset=['Km Percorrido', 'Km Falha', 'Km Ociosa']).apply(
-                        lambda row: ['font-weight: bold; background-color: #e0f7fa;'] * len(row) if row.name == 'Total Geral (Km)' else [''] * len(row), axis=1),
+                    st.dataframe(tabela_rosa_com_total.style.format(formatar_br, subset=format_subset).apply(
+                        highlight_total_row_st, axis=1),
                         use_container_width=True)
                 else:
                     st.subheader("Operadora — Rosa")
@@ -332,10 +337,9 @@ def main():
 
                 # Total Geral (consolidada)
                 st.subheader("Tabela Consolidada — Total Geral")
-                # CORREÇÃO: Usar .style.format(formatar_br, subset=...)
                 tabela_final_com_total = adicionar_linha_total(tabela_final)
-                st.dataframe(tabela_final_com_total.style.format(formatar_br, subset=['Km Percorrido', 'Km Falha', 'Km Ociosa']).apply(
-                    lambda row: ['font-weight: bold; background-color: #e0f7fa;'] * len(row) if row.name == 'Total Geral (Km)' else [''] * len(row), axis=1),
+                st.dataframe(tabela_final_com_total.style.format(formatar_br, subset=format_subset).apply(
+                    highlight_total_row_st, axis=1),
                     use_container_width=True)
             else:
                 # Apenas a operadora selecionada
@@ -343,10 +347,9 @@ def main():
                 if tabela_final is None or tabela_final.empty:
                     st.info("Nenhum dado disponível para esta operadora.")
                 else:
-                    # CORREÇÃO: Usar .style.format(formatar_br, subset=...)
                     tabela_final_com_total = adicionar_linha_total(tabela_final)
-                    st.dataframe(tabela_final_com_total.style.format(formatar_br, subset=['Km Percorrido', 'Km Falha', 'Km Ociosa']).apply(
-                        lambda row: ['font-weight: bold; background-color: #e0f7fa;'] * len(row) if row.name == 'Total Geral (Km)' else [''] * len(row), axis=1),
+                    st.dataframe(tabela_final_com_total.style.format(formatar_br, subset=format_subset).apply(
+                        highlight_total_row_st, axis=1),
                         use_container_width=True)
 
             # -------- Agora o gráfico (APÓS as tabelas) --------
@@ -407,16 +410,14 @@ def main():
                     "Km Percorrido": "#1f77b4", 
                     "Km Falha": "#ff7f0e", 
                     "Km Ociosa": "#2ca02c" 
-                }
+                },
+                # MANTENDO template NEUTRO/PADRÃO PARA SE ADAPTAR AO TEMA DO STREAMLIT
             )
 
-            # Ajuste de layout para evitar conflito entre rótulo e eixo no PDF
+            # AJUSTE: Removendo definições de cor de fundo (white) para que herdem o tema
             fig.update_layout(
                 height=500,
-                width=700,
                 autosize=False,
-                plot_bgcolor='white',
-                paper_bgcolor='white',
                 margin=dict(l=90, r=40, t=70, b=40)
             )
             fig.update_traces(marker=dict(line=dict(width=0)))
