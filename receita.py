@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import math
 
 def main():
     # --- Configuração da Página ---
@@ -168,6 +169,21 @@ def main():
         return df_res, via_pass, quota
 
     # ----------------------------------------------------------------
+    # --- FUNÇÃO AUXILIAR: ARREDONDAMENTO PERSONALIZADO ---
+    # ----------------------------------------------------------------
+    def arredondar_personalizado(valor):
+        if pd.isna(valor):
+            return 0
+        inteiro = int(valor)
+        decimal = valor - inteiro
+        # Se decimal <= 0.5 arredonda para baixo (mantém o inteiro)
+        # Se decimal > 0.5 arredonda para cima (inteiro + 1)
+        if decimal > 0.5:
+            return inteiro + 1
+        else:
+            return inteiro
+
+    # ----------------------------------------------------------------
     # --- UPLOAD ---
     # ----------------------------------------------------------------
     file = st.file_uploader("Selecione um arquivo CSV ou Excel", type=["csv", "xlsx"])
@@ -202,7 +218,10 @@ def main():
 
     if df_pass is not None:
         df_final = df_final.merge(df_pass, on=COLUNA_OPERADORA, how="left")
-        df_final["Passageiro Equivalente"] = df_final["Receita (R$)"] / TARIFA
+        
+        # --- CÁLCULO E ARREDONDAMENTO PERSONALIZADO DO PASSAGEIRO EQUIVALENTE ---
+        valores_brutos = df_final["Receita (R$)"] / TARIFA
+        df_final["Passageiro Equivalente"] = valores_brutos.apply(arredondar_personalizado)
 
         nova_linha = {
             COLUNA_OPERADORA: "SIT",
@@ -283,8 +302,6 @@ def main():
         # -------------------------------------------------------
         # 1. Identificação e Cálculo da Integração (QUANTIDADE)
         # -------------------------------------------------------
-        # Ajuste: Busca colunas de Integração que NÃO sejam de valor monetário (pois estão zeradas),
-        # somando assim as quantidades (VT Integração + Passagens Integração + Estudantes Integração).
         cols_int_qtd = [
             c for c in df_receita_tipos.columns 
             if ('integra' in c.lower() and 'valor' not in c.lower() and 'r$' not in c.lower())
@@ -293,12 +310,8 @@ def main():
         # -------------------------------------------------------
         # 2. Definição das Colunas de Exibição (QUANTIDADES)
         # -------------------------------------------------------
-        # Lista exata das colunas de QUANTIDADE que você quer exibir (Indices 0, 2, 6, 14, 10)
-        # Atenção: O código busca pelo nome exato ou parte dele que não seja valor.
-        
         colunas_display_map = {}
         
-        # Função para achar a coluna correta no DataFrame
         def achar_coluna(termos_ok, termos_proibidos=None):
             if termos_proibidos is None: termos_proibidos = []
             matches = [
@@ -309,28 +322,21 @@ def main():
             ]
             return matches[0] if matches else None
 
-        # Mapeamento Solicitado:
-        # Vale Transporte = VT (Quantidade)
         c_vt = achar_coluna(['vt'], termos_proibidos=['valor', 'integra'])
         if c_vt: colunas_display_map[c_vt] = 'VT'
 
-        # Gratuidade = Gratuidade
         c_grat = achar_coluna(['gratuidade'])
         if c_grat: colunas_display_map[c_grat] = 'Gratuidade'
 
-        # Estudante = Estudantes
         c_est = achar_coluna(['estudante'], termos_proibidos=['valor', 'integra', 'gratuito'])
         if c_est: colunas_display_map[c_est] = 'Estudantes'
 
-        # Dinheiro = Inteiras
         c_int = achar_coluna(['inteira'], termos_proibidos=['valor', 'integra'])
         if c_int: colunas_display_map[c_int] = 'Inteiras'
 
-        # Social = Passagens
         c_soc = achar_coluna(['passagen'], termos_proibidos=['valor', 'integra', 'passageiro'])
         if c_soc: colunas_display_map[c_soc] = 'Passagens'
 
-        # Colunas finais para a tabela (sem a integração ainda)
         cols_finais_lista = list(colunas_display_map.keys())
 
         # -------------------------------------------------------
@@ -338,61 +344,44 @@ def main():
         # -------------------------------------------------------
         tabela_por_operadora = df_receita_tipos.groupby(COLUNA_OPERADORA)[cols_finais_lista].sum()
         
-        # Adiciona a Soma Integração (Soma das Quantidades identificadas)
         if cols_int_qtd:
-            # Calcula o valor total da integração para cada operadora
             vals_integra = df_receita_tipos.groupby(COLUNA_OPERADORA)[cols_int_qtd].sum().sum(axis=1)
             tabela_por_operadora["Soma Integração"] = vals_integra
         else:
             tabela_por_operadora["Soma Integração"] = 0.0
 
         # --- DISTRIBUIÇÃO DA COTA (VIA FEIRA -> ROSA/SÃO JOÃO) ---
-        # Divide os valores da Via Feira (incluindo a integração) e distribui
         if nome_via in tabela_por_operadora.index:
             valores_via = tabela_por_operadora.loc[nome_via]
             cota = valores_via / 2
             
-            # Adiciona para Rosa (se existir na tabela, senão cria linha)
             if nome_rosa in tabela_por_operadora.index:
                 tabela_por_operadora.loc[nome_rosa] += cota
             else:
                  tabela_por_operadora.loc[nome_rosa] = cota
 
-            # Adiciona para São João (se existir na tabela, senão cria linha)
             if nome_sj in tabela_por_operadora.index:
                 tabela_por_operadora.loc[nome_sj] += cota
             else:
                 tabela_por_operadora.loc[nome_sj] = cota
 
-            # Remove Via Feira
             tabela_por_operadora = tabela_por_operadora.drop(index=nome_via)
 
-        # Renomeia as colunas para o display desejado
+        # Renomeia e Reordena
         tabela_por_operadora = tabela_por_operadora.rename(columns=colunas_display_map)
-
-        # Reordena para ficar bonito (se as colunas existirem)
         ordem_desejada = ['VT', 'Gratuidade', 'Estudantes', 'Inteiras', 'Passagens', 'Soma Integração']
         cols_presentes = [c for c in ordem_desejada if c in tabela_por_operadora.columns]
         tabela_por_operadora = tabela_por_operadora[cols_presentes]
 
+        # -------------------------------------------------------
+        # 4. Adicionar Linha TOTAL na Tabela Principal e Remover Tabela Resumo
+        # -------------------------------------------------------
+        # Soma todas as colunas
+        tabela_por_operadora.loc["TOTAL"] = tabela_por_operadora.sum()
+
         st.subheader("Receita por Tipo Separada por Operadora")
         st.dataframe(
             tabela_por_operadora.style.format("R$ {:,.2f}"),
-            use_container_width=True
-        )
-
-        # -------------------------------------------------------
-        # 4. Total Geral por Tipo (Lista Vertical)
-        # -------------------------------------------------------
-        st.subheader("Total Geral por Tipo (Resumo)")
-        
-        # Transpõe a tabela por operadora para ter o formato de lista
-        # Soma as colunas (que agora já são as filtradas)
-        resumo = tabela_por_operadora.sum().reset_index()
-        resumo.columns = ["Tipo de Passagem", "Total"]
-        
-        st.dataframe(
-            resumo.style.format({"Total": "R$ {:,.2f}"}),
             use_container_width=True
         )
 
