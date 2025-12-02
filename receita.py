@@ -346,6 +346,27 @@ def main():
         else:
             tabela_por_operadora["Soma Integração"] = 0.0
 
+        # --- DISTRIBUIÇÃO DA COTA (VIA FEIRA -> ROSA/SÃO JOÃO) ---
+        # Divide os valores da Via Feira (incluindo a integração) e distribui
+        if nome_via in tabela_por_operadora.index:
+            valores_via = tabela_por_operadora.loc[nome_via]
+            cota = valores_via / 2
+            
+            # Adiciona para Rosa (se existir na tabela, senão cria linha)
+            if nome_rosa in tabela_por_operadora.index:
+                tabela_por_operadora.loc[nome_rosa] += cota
+            else:
+                 tabela_por_operadora.loc[nome_rosa] = cota
+
+            # Adiciona para São João (se existir na tabela, senão cria linha)
+            if nome_sj in tabela_por_operadora.index:
+                tabela_por_operadora.loc[nome_sj] += cota
+            else:
+                tabela_por_operadora.loc[nome_sj] = cota
+
+            # Remove Via Feira
+            tabela_por_operadora = tabela_por_operadora.drop(index=nome_via)
+
         # Renomeia as colunas para o display desejado
         tabela_por_operadora = tabela_por_operadora.rename(columns=colunas_display_map)
 
@@ -356,7 +377,7 @@ def main():
 
         st.subheader("Receita por Tipo Separada por Operadora")
         st.dataframe(
-            tabela_por_operadora.style.format("{:,.2f}"),
+            tabela_por_operadora.style.format("R$ {:,.2f}"),
             use_container_width=True
         )
 
@@ -371,7 +392,7 @@ def main():
         resumo.columns = ["Tipo de Passagem", "Total"]
         
         st.dataframe(
-            resumo.style.format({"Total": "{:,.2f}"}),
+            resumo.style.format({"Total": "R$ {:,.2f}"}),
             use_container_width=True
         )
 
