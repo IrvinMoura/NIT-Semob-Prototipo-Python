@@ -216,6 +216,7 @@ def main():
                 
         return tabela_granular, picos, df_detalhe
 
+
     # --- Interface Streamlit ---
 
     st.title("🚌 Análise de Horário de Pico de Passageiros por Linha(s)")
@@ -249,6 +250,43 @@ def main():
                 st.subheader(f"Análise de Grupo para: **{', '.join(linhas_selecionadas)}**")
                 
                 tabela_resultados, picos, df_detalhe_linhas = calcular_pico_agrupado(df_filtrado.copy())
+
+            # ================= TABELA RESUMO DIÁRIO POR LINHA =================
+
+                dados_resumo = []
+
+                for linha in linhas_selecionadas:
+
+                    df_linha = df_filtrado[df_filtrado['Código Externo Linha'] == linha]
+
+                    # ----- DIA ÚTIL (média do total diário) -----
+                    df_uteis = df_linha[df_linha['Dia da Semana'].isin(DIAS_UTEIS_NUM)]
+
+                    if not df_uteis.empty:
+                        totais_diarios_uteis = (
+                            df_uteis
+                            .groupby(df_uteis['Data Hora Início'].dt.date)['Passageiros']
+                            .sum()
+                        )
+                        media_dia_util = totais_diarios_uteis.mean()
+                    else:
+                        media_dia_util = 0
+
+                    # ----- SÁBADO (total diário) -----
+                    total_sabado = df_linha[df_linha['Dia Nome'] == 'Sábado']['Passageiros'].sum()
+
+                    # ----- DOMINGO (total diário) -----
+                    total_domingo = df_linha[df_linha['Dia Nome'] == 'Domingo']['Passageiros'].sum()
+
+                    dados_resumo.append({
+                        'Linha': linha,
+                        'Dia Útil (Média do Total Diário)': round(media_dia_util, 2),
+                        'Sábado (Total Diário)': round(total_sabado, 2),
+                        'Domingo (Total Diário)': round(total_domingo, 2)
+                    })
+
+                df_resumo_linhas = pd.DataFrame(dados_resumo)
+                # =================================================================
 
                 if tabela_resultados is not None:
                     
@@ -311,7 +349,14 @@ def main():
                     st.plotly_chart(fig_fim_semana, use_container_width=True)
 
                     st.markdown("---")
-                    
+
+                    st.markdown("### 📊 Resumo Diário de Passageiros por Linha")
+
+                    df_resumo_exib = df_resumo_linhas.copy()
+                    df_resumo_exib.iloc[:, 1:] = np.ceil(df_resumo_exib.iloc[:, 1:]).astype(int)
+
+                    st.dataframe(df_resumo_exib, use_container_width=True, hide_index=True)
+
                     # --- HORÁRIO DE PICO E DETALHAMENTO POR LINHA ---
                     st.markdown("### 2. Horários de Pico e Detalhamento por Linha")
                     
