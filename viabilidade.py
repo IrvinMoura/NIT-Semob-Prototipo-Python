@@ -290,11 +290,18 @@ def main():
 
                 if tabela_resultados is not None:
                     
+                    # --- CORREÇÃO DO ERRO (INSERIR ESTE BLOCO) ---
+                    # Garante que as colunas de Sábado e Domingo existam no DataFrame
+                    # Se não existirem (porque a linha não roda), cria com valor 0.
+                    # Isso evita o KeyError no .melt() abaixo.
+                    for dia_fds in ['Sábado', 'Domingo']:
+                        if dia_fds not in tabela_resultados.columns:
+                            tabela_resultados[dia_fds] = 0.0
+                    # ---------------------------------------------
+
                     # --- TABELA DE VALORES AGREGADOS POR HORA (GRUPO) ---
                     st.markdown("### 1. Demanda Agregada por Hora (Grupo)")
-                    # TEXTO ATUALIZADO: Todos os dias agora são Soma
                     st.markdown("**(Segunda a Domingo = Soma Total de Passageiros na Hora)**") 
-                    # TEXTO ATUALIZADO: Dia Útil é Média da Soma
                     st.markdown("**(Coluna 'Dia Útil' é a Média da Soma de Seg a Sex)**") 
                     
                     # CÓPIA PARA ARREDONDAMENTO P/ CIMA (SOMENTE EXIBIÇÃO)
@@ -315,6 +322,7 @@ def main():
                     )
                     
                     # Adiciona Sábado e Domingo separadamente para o gráfico, se necessário
+                    # AGORA ISSO NÃO VAI DAR ERRO PORQUE GARANTIMOS QUE AS COLUNAS EXISTEM ACIMA
                     df_plot_fim_semana = tabela_resultados.melt(
                         id_vars='Hora', 
                         value_vars=['Sábado', 'Domingo'],
