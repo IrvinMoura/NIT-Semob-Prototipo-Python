@@ -1,5 +1,5 @@
 pandas
-streamlit
+streamlit>=1.31.0
 plotly
 openpyxl
 unidecode
