@@ -16,7 +16,7 @@ def main():
     st.markdown("Faça o upload de uma planilha (CSV ou Excel) para calcular a receita e o fluxo de passageiros das operadoras. (Usar arquivo de Relação de Faturamento)")
 
     # --- Constantes ---
-    TARIFA = 5.15
+    TARIFA = 5.40
 
     # --- Colunas esperadas ---
     COLUNA_OPERADORA = 'Nome Operadora'
