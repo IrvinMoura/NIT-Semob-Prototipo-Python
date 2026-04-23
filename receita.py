@@ -14,6 +14,7 @@ def main():
     # --- Título do Aplicativo ---
     st.title("💰 Cálculo de Receita e Passageiros por Operadora")
     st.markdown("Faça o upload de uma planilha (CSV ou Excel) para calcular a receita e o fluxo de passageiros das operadoras. (Usar arquivo de Relação de Faturamento)")
+    st.markdown("Tarifa atual: 5,40")
 
     # --- Constantes ---
     TARIFA = 5.40
