@@ -343,6 +343,7 @@ def main():
         # 3. Montagem da Tabela Por Operadora
         # -------------------------------------------------------
         tabela_por_operadora = df_receita_tipos.groupby(COLUNA_OPERADORA)[cols_finais_lista].sum()
+        tabela_por_operadora = tabela_por_operadora.astype(float)
         
         if cols_int_qtd:
             vals_integra = df_receita_tipos.groupby(COLUNA_OPERADORA)[cols_int_qtd].sum().sum(axis=1)
