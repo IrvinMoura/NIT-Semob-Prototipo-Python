@@ -114,8 +114,8 @@ def main():
         quota = via_feira_rec / 2
 
         df_resultado = pd.DataFrame([
-            {COLUNA_OPERADORA: nome_rosa, "Receita Final": 0},
-            {COLUNA_OPERADORA: nome_sj, "Receita Final": 0}
+            {COLUNA_OPERADORA: nome_rosa, "Receita Final": 0.0},
+            {COLUNA_OPERADORA: nome_sj, "Receita Final": 0.0}
         ])
 
         for _, row in receita_total.iterrows():
