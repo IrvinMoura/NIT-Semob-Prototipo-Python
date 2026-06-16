@@ -72,7 +72,6 @@ def main():
             df.dropna(subset=[coluna], inplace=True)
             return True
         except Exception as e:
-            # st.error(f"Erro ao limpar coluna '{coluna}': {e}") # Opcional: comentar para não poluir
             return False
 
     # ----------------------------------------------------------------
@@ -148,16 +147,19 @@ def main():
         passageiros_total = df.groupby(COLUNA_OPERADORA)[COLUNA_PASSAGEIROS].sum().reset_index(name="Pass Bruto")
 
         via_pass = passageiros_total.loc[passageiros_total[COLUNA_OPERADORA] == nome_via, "Pass Bruto"].iloc[0] if nome_via in passageiros_total[COLUNA_OPERADORA].values else 0
-        quota = via_pass / 2
+        quota = float(via_pass) / 2  # FIX: garante float explicitamente
 
+        # FIX: inicializa coluna como float (0.0 em vez de 0)
+        # Isso previne TypeError no pandas 2.x+ (Python 3.13) ao atribuir
+        # quota (float64) a uma coluna int64 via .loc
         df_res = pd.DataFrame([
-            {COLUNA_OPERADORA: nome_rosa, "Total Passageiros": 0},
-            {COLUNA_OPERADORA: nome_sj, "Total Passageiros": 0},
+            {COLUNA_OPERADORA: nome_rosa, "Total Passageiros": 0.0},
+            {COLUNA_OPERADORA: nome_sj, "Total Passageiros": 0.0},
         ])
 
         for _, row in passageiros_total.iterrows():
             op = row[COLUNA_OPERADORA]
-            val = row["Pass Bruto"]
+            val = float(row["Pass Bruto"])  # FIX: converte para float antes de somar
             if op == nome_via: continue
             if op == nome_rosa:
                 df_res.loc[df_res[COLUNA_OPERADORA] == nome_rosa, "Total Passageiros"] += val
@@ -268,16 +270,14 @@ def main():
     # ===================================================================
     st.header("🧾 Detalhamento por Tipo (Quantidade e Integração)")
 
-    # Filtra colunas que parecem ser tipos de passagem/valor
-    # Mantemos a lógica ampla primeiro para garantir que pegamos os VALORES para o cálculo da integração
     colunas_receita_tipo = [
         col for col in df.columns
         if (
             any(k in col.lower() for k in [
                 "inteira", "vt", "estud", "grat", "social", "integra", "passe", "vale", "passag"
             ])
-            and "passageiro" not in col.lower()   # evita colunas de quantidade total
-            and col != COLUNA_VALOR               # evita duplicar a coluna principal
+            and "passageiro" not in col.lower()
+            and col != COLUNA_VALOR
         )
     ]
 
@@ -376,9 +376,8 @@ def main():
         tabela_por_operadora = tabela_por_operadora[cols_presentes]
 
         # -------------------------------------------------------
-        # 4. Adicionar Linha TOTAL na Tabela Principal e Remover Tabela Resumo
+        # 4. Adicionar Linha TOTAL na Tabela Principal
         # -------------------------------------------------------
-        # Soma todas as colunas
         tabela_por_operadora.loc["TOTAL"] = tabela_por_operadora.sum()
 
         st.subheader("Receita por Tipo Separada por Operadora")
